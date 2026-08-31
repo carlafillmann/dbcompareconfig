@@ -90,10 +90,11 @@ export async function listUsers() {
 }
 
 export async function createUser(user: Omit<FirestoreUserProfile, 'id'>) {
-  await addDoc(collection(firestore, 'users'), user);
+  const { email, ...data } = user;
+  await addDoc(collection(firestore, 'users'), { ...data, ...(email ? { email } : {}) });
 }
 
 export async function updateUser(user: FirestoreUserProfile) {
-  const { id, ...data } = user;
-  await updateDoc(doc(firestore, 'users', id), data);
+  const { id, email, ...data } = user;
+  await updateDoc(doc(firestore, 'users', id), { ...data, ...(email ? { email } : { email: '' }) });
 }
