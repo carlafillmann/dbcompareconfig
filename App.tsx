@@ -2107,6 +2107,8 @@ export default function App() {
     password: "",
   });
   const [compareRows, setCompareRows] = useState<CompareResult[] | null>(null);
+  const [compareSelectionCollapsed, setCompareSelectionCollapsed] =
+    useState(false);
   const [comparisonVersion, setComparisonVersion] = useState(0);
   const [comparing, setComparing] = useState(false);
   const [descriptionDetail, setDescriptionDetail] =
@@ -2601,6 +2603,7 @@ export default function App() {
             !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
         ),
       );
+      setCompareSelectionCollapsed(true);
       setComparisonVersion((version) => version + 1);
     } catch (error) {
       setCompareRows(null);
@@ -2968,6 +2971,20 @@ export default function App() {
                       parâmetros e configurações.
                     </Text>
                   </View>
+                  {compareRows && (
+                    <Pressable
+                      style={styles.compareSelectionToggle}
+                      onPress={() =>
+                        setCompareSelectionCollapsed((collapsed) => !collapsed)
+                      }
+                    >
+                      <Text style={styles.compareSelectionToggleText}>
+                        {compareSelectionCollapsed
+                          ? "Exibir seleção das bases"
+                          : "Ocultar seleção das bases"}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
                 {notice && <NoticeBox notice={notice} />}
                 {loading ? (
@@ -2991,47 +3008,57 @@ export default function App() {
                   </View>
                 ) : (
                   <>
-                    <View style={styles.compareLayout}>
-                      <CompareCard
-                        title="Base de Dados 1"
-                        subtitle="Primeira base da comparação"
-                        selection={leftCompare}
-                        connections={connections}
-                        onSelect={(id) =>
-                          selectForCompare(id, setLeftCompare, leftCompare)
-                        }
-                        onChange={setLeftCompare}
-                      />
-                      <View style={styles.compareArrow}>
-                        <Text style={styles.compareArrowText}>⇄</Text>
-                      </View>
-                      <CompareCard
-                        title="Base de Dados 2"
-                        subtitle="Segunda base da comparação"
-                        selection={rightCompare}
-                        connections={connections}
-                        onSelect={(id) =>
-                          selectForCompare(id, setRightCompare, rightCompare)
-                        }
-                        onChange={setRightCompare}
-                      />
-                    </View>
-                    <View style={styles.compareAction}>
-                      <Pressable
-                        style={[
-                          styles.primaryButton,
-                          comparing && styles.disabled,
-                        ]}
-                        onPress={compareBases}
-                        disabled={comparing}
-                      >
-                        {comparing ? (
-                          <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                          <Text style={styles.primaryText}>Comparar Bases</Text>
-                        )}
-                      </Pressable>
-                    </View>
+                    {!compareSelectionCollapsed && (
+                      <>
+                        <View style={styles.compareLayout}>
+                          <CompareCard
+                            title="Base de Dados 1"
+                            subtitle="Primeira base da comparação"
+                            selection={leftCompare}
+                            connections={connections}
+                            onSelect={(id) =>
+                              selectForCompare(id, setLeftCompare, leftCompare)
+                            }
+                            onChange={setLeftCompare}
+                          />
+                          <View style={styles.compareArrow}>
+                            <Text style={styles.compareArrowText}>⇄</Text>
+                          </View>
+                          <CompareCard
+                            title="Base de Dados 2"
+                            subtitle="Segunda base da comparação"
+                            selection={rightCompare}
+                            connections={connections}
+                            onSelect={(id) =>
+                              selectForCompare(
+                                id,
+                                setRightCompare,
+                                rightCompare,
+                              )
+                            }
+                            onChange={setRightCompare}
+                          />
+                        </View>
+                        <View style={styles.compareAction}>
+                          <Pressable
+                            style={[
+                              styles.primaryButton,
+                              comparing && styles.disabled,
+                            ]}
+                            onPress={compareBases}
+                            disabled={comparing}
+                          >
+                            {comparing ? (
+                              <ActivityIndicator color="#FFFFFF" />
+                            ) : (
+                              <Text style={styles.primaryText}>
+                                Comparar Bases
+                              </Text>
+                            )}
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
                     {compareRows && (
                       <CompareOutput
                         rows={compareRows}
@@ -3823,6 +3850,19 @@ const styles = StyleSheet.create(
         alignItems: "center",
         marginBottom: 18,
         gap: 16,
+      },
+      compareSelectionToggle: {
+        borderWidth: 1,
+        borderColor: "#DFDCFF",
+        backgroundColor: "#F4F3FF",
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
+      },
+      compareSelectionToggleText: {
+        color: "#5546CB",
+        fontSize: 13,
+        fontWeight: "700",
       },
       constructionBadge: {
         backgroundColor: "#F4F3FF",
