@@ -33,6 +33,10 @@ type ParameterRow = {
 type CompareSide = Partial<ConnectionPayload>;
 const parameterQuery =
   "SELECT D.CDPARAMETRO, D.DEPARAMETRO, V.VLPARAMETRO, D.DEEXPLICACAO FROM EPADDEFPARAMETRO D JOIN EPADVALORPARAMETRO V ON (D.CDPARAMETRO = V.CDPARAMETRO) WHERE V.CDINSTALACAO = 1";
+const webServicesQuery =
+  "SELECT CDWEBSERVICES, DEWEBSERVICES, SGTIPOINTEGRACAO FROM ESPJWS";
+const webServiceParametersQuery =
+  "SELECT CDWEBSERVICES, DEPARAMETRO, DEDESCRICAO, VLPARAMETRO FROM ESPJWSPARAMETROS WHERE CDWEBSERVICES = ";
 
 const app = express();
 const allowedOrigins = (
@@ -219,6 +223,153 @@ async function queryParameters(
     await connection?.close().catch(() => undefined);
   }
 }
+
+type WebService = {
+  code: string;
+  description: string;
+  integrationType: string;
+};
+type WebServiceParameter = {
+  parameter: string;
+  description: string | null;
+  value: string | null;
+};
+const valueText = (row: Record<string, unknown>, field: string) =>
+  String(valueFrom(row, field) ?? "");
+const nullableText = (row: Record<string, unknown>, field: string) => {
+  const value = valueFrom(row, field);
+  return value === null || value === undefined ? null : String(value);
+};
+function normalizeWebService(row: Record<string, unknown>): WebService {
+  return {
+    code: valueText(row, "CDWEBSERVICES"),
+    description: valueText(row, "DEWEBSERVICES"),
+    integrationType: valueText(row, "SGTIPOINTEGRACAO"),
+  };
+}
+function normalizeWebServiceParameter(
+  row: Record<string, unknown>,
+): WebServiceParameter {
+  return {
+    parameter: valueText(row, "DEPARAMETRO"),
+    description: nullableText(row, "DEDESCRICAO"),
+    value: nullableText(row, "VLPARAMETRO"),
+  };
+}
+async function queryWebServiceRows(
+  data: Required<ConnectionPayload>,
+  serviceCode?: string,
+): Promise<Record<string, unknown>[]> {
+  if (data.databaseType === "postgresql") {
+    const client = new PgClient({
+      host: data.host,
+      port: data.port,
+      database: data.database,
+      user: data.username,
+      password: data.password,
+      connectionTimeoutMillis: 10000,
+      ssl: false,
+    });
+    try {
+      await client.connect();
+      return (
+        await client.query(
+          serviceCode ? `${webServiceParametersQuery}$1` : webServicesQuery,
+          serviceCode ? [serviceCode] : [],
+        )
+      ).rows;
+    } finally {
+      await client.end().catch(() => undefined);
+    }
+  }
+  if (data.databaseType === "sqlserver") {
+    const pool = await new sql.ConnectionPool({
+      server: data.host,
+      port: data.port,
+      database: data.database,
+      user: data.username,
+      password: data.password,
+      options: { encrypt: true, trustServerCertificate: true },
+      connectionTimeout: 10000,
+      requestTimeout: 30000,
+    }).connect();
+    try {
+      const request = pool.request();
+      if (serviceCode) request.input("serviceCode", sql.VarChar, serviceCode);
+      return (
+        await request.query(
+          serviceCode
+            ? `${webServiceParametersQuery}@serviceCode`
+            : webServicesQuery,
+        )
+      ).recordset;
+    } finally {
+      await pool.close();
+    }
+  }
+  let connection: oracledb.Connection | undefined;
+  try {
+    connection = await oracledb.getConnection({
+      user: data.username,
+      password: data.password,
+      connectString: `${data.host}:${data.port}/${data.database}`,
+    });
+    const result = await connection.execute<Record<string, unknown>>(
+      serviceCode
+        ? `${webServiceParametersQuery}:serviceCode`
+        : webServicesQuery,
+      serviceCode ? { serviceCode } : [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT },
+    );
+    return result.rows || [];
+  } finally {
+    await connection?.close().catch(() => undefined);
+  }
+}
+async function queryWebServices(data: Required<ConnectionPayload>) {
+  return (await queryWebServiceRows(data))
+    .map(normalizeWebService)
+    .sort((a, b) => a.code.localeCompare(b.code, "pt-BR", { numeric: true }));
+}
+async function queryWebServiceParameters(
+  data: Required<ConnectionPayload>,
+  serviceCode: string,
+) {
+  return (await queryWebServiceRows(data, serviceCode)).map(
+    normalizeWebServiceParameter,
+  );
+}
+function compareWebServiceParameters(
+  first: WebServiceParameter[],
+  second: WebServiceParameter[],
+) {
+  const firstByParameter = new Map(first.map((row) => [row.parameter, row]));
+  const secondByParameter = new Map(second.map((row) => [row.parameter, row]));
+  return [...new Set([...firstByParameter.keys(), ...secondByParameter.keys()])]
+    .sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }))
+    .map((parameter) => {
+      const firstRow = firstByParameter.get(parameter);
+      const secondRow = secondByParameter.get(parameter);
+      return {
+        cdParametro: parameter,
+        deParametro: firstRow?.description ?? secondRow?.description ?? "",
+        deParametroFirst: firstRow?.description ?? null,
+        deParametroSecond: secondRow?.description ?? null,
+        descriptionDifferent: Boolean(
+          firstRow &&
+          secondRow &&
+          firstRow.description !== secondRow.description,
+        ),
+        firstExplanation: firstRow?.description ?? null,
+        secondExplanation: secondRow?.description ?? null,
+        firstValue: firstRow?.value ?? null,
+        secondValue: secondRow?.value ?? null,
+        valuesDifferent: firstRow?.value !== secondRow?.value,
+        foundInFirst: Boolean(firstRow),
+        foundInSecond: Boolean(secondRow),
+      };
+    });
+}
 function comparisonConnection(side: CompareSide): Required<ConnectionPayload> {
   return validate(side) as Required<ConnectionPayload>;
 }
@@ -285,6 +436,45 @@ app.post("/api/compare", async (req, res, next) => {
     );
     res.json({
       rows: compareParameters(firstRows, secondRows),
+      firstCount: firstRows.length,
+      secondCount: secondRows.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+app.post("/api/webservices", async (req, res, next) => {
+  try {
+    const connection = comparisonConnection(
+      (req.body as { connection?: CompareSide }).connection || {},
+    );
+    res.json({ webservices: await queryWebServices(connection) });
+  } catch (error) {
+    next(error);
+  }
+});
+app.post("/api/webservices/compare", async (req, res, next) => {
+  try {
+    const body = req.body as {
+      first?: CompareSide;
+      second?: CompareSide;
+      firstServiceCode?: unknown;
+      secondServiceCode?: unknown;
+    };
+    const firstServiceCode = String(body.firstServiceCode || "").trim();
+    const secondServiceCode = String(body.secondServiceCode || "").trim();
+    if (!firstServiceCode || !secondServiceCode)
+      throw new Error("Selecione um Webservice em cada base.");
+    const firstRows = await queryWebServiceParameters(
+      comparisonConnection(body.first || {}),
+      firstServiceCode,
+    );
+    const secondRows = await queryWebServiceParameters(
+      comparisonConnection(body.second || {}),
+      secondServiceCode,
+    );
+    res.json({
+      rows: compareWebServiceParameters(firstRows, secondRows),
       firstCount: firstRows.length,
       secondCount: secondRows.length,
     });

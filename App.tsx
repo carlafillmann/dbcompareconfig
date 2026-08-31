@@ -72,13 +72,18 @@ type CompareResult = {
   foundInFirst: boolean;
   foundInSecond: boolean;
 };
+type WebServiceOption = {
+  code: string;
+  description: string;
+  integrationType: string;
+};
 
 const apiUrl =
   process.env.EXPO_PUBLIC_DATABASE_API_URL ||
   process.env.EXPO_PUBLIC_API_URL ||
   "http://127.0.0.1:3333";
 const connectorDownloadUrl =
-  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.1/DBCompare.Connector.Setup.1.0.1.exe";
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.2/DBCompare.Connector.Setup.1.0.2.exe";
 const environments: EnvironmentType[] = [
   "Produção",
   "Homologação",
@@ -205,7 +210,186 @@ function ConstructionPanel({ title }: { title: string }) {
     </View>
   );
 }
-function CompareOutput(props: React.ComponentProps<typeof CompareResults>) {
+function WebservicesComparison({
+  left,
+  right,
+  firstName,
+  secondName,
+  loadWebServices,
+  compareWebServices,
+  onDescriptionPress,
+}: {
+  left: CompareSelection;
+  right: CompareSelection;
+  firstName: string;
+  secondName: string;
+  loadWebServices: (selection: CompareSelection) => Promise<WebServiceOption[]>;
+  compareWebServices: (
+    firstCode: string,
+    secondCode: string,
+  ) => Promise<CompareResult[]>;
+  onDescriptionPress: (row: CompareResult) => void;
+}) {
+  const [firstServices, setFirstServices] = useState<WebServiceOption[]>([]);
+  const [secondServices, setSecondServices] = useState<WebServiceOption[]>([]);
+  const [firstCode, setFirstCode] = useState("");
+  const [secondCode, setSecondCode] = useState("");
+  const [rows, setRows] = useState<CompareResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [onlyDifferent, setOnlyDifferent] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({
+    code: "",
+    description: "",
+    explanation: "",
+    first: "",
+    second: "",
+    status: "",
+  });
+  useEffect(() => {
+    setFirstCode("");
+    setSecondCode("");
+    setRows(null);
+    setError("");
+    if (
+      !left.connectionId ||
+      !right.connectionId ||
+      !left.password ||
+      !right.password
+    ) {
+      setFirstServices([]);
+      setSecondServices([]);
+      return;
+    }
+    setLoading(true);
+    Promise.all([loadWebServices(left), loadWebServices(right)])
+      .then(([first, second]) => {
+        setFirstServices(first);
+        setSecondServices(second);
+      })
+      .catch((error) => setError(errorText(error)))
+      .finally(() => setLoading(false));
+  }, [
+    left.connectionId,
+    right.connectionId,
+    left.username,
+    left.password,
+    right.username,
+    right.password,
+  ]);
+  useEffect(() => {
+    if (!firstCode || !secondCode) return;
+    setLoading(true);
+    setError("");
+    compareWebServices(firstCode, secondCode)
+      .then(setRows)
+      .catch((error) => {
+        setRows(null);
+        setError(errorText(error));
+      })
+      .finally(() => setLoading(false));
+  }, [firstCode, secondCode]);
+  const itemLabel = (item: WebServiceOption) =>
+    `${item.code} - ${item.description} - ${item.integrationType}`;
+  return (
+    <View>
+      <View style={styles.webserviceSelectors}>
+        <View style={styles.flexOne}>
+          <Field label={firstName}>
+            <View style={styles.pickerBox}>
+              <Picker
+                style={styles.fullPicker}
+                selectedValue={firstCode}
+                onValueChange={setFirstCode}
+                enabled={!loading && firstServices.length > 0}
+              >
+                <Picker.Item label="Selecione um Webservice" value="" />
+                {firstServices.map((item) => (
+                  <Picker.Item
+                    key={item.code}
+                    label={itemLabel(item)}
+                    value={item.code}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </Field>
+        </View>
+        <View style={styles.flexOne}>
+          <Field label={secondName}>
+            <View style={styles.pickerBox}>
+              <Picker
+                style={styles.fullPicker}
+                selectedValue={secondCode}
+                onValueChange={setSecondCode}
+                enabled={!loading && secondServices.length > 0}
+              >
+                <Picker.Item label="Selecione um Webservice" value="" />
+                {secondServices.map((item) => (
+                  <Picker.Item
+                    key={item.code}
+                    label={itemLabel(item)}
+                    value={item.code}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </Field>
+        </View>
+      </View>
+      {loading && (
+        <View style={styles.loading}>
+          <ActivityIndicator color="#6558F5" />
+          <Text style={styles.muted}>Consultando Webservices…</Text>
+        </View>
+      )}
+      {error ? <Text style={styles.loginError}>{error}</Text> : null}
+      {!loading &&
+        !error &&
+        (!left.connectionId ||
+          !right.connectionId ||
+          !left.password ||
+          !right.password) && (
+          <Text style={styles.muted}>
+            Selecione as duas bases e informe suas senhas para consultar os
+            Webservices.
+          </Text>
+        )}
+      {rows && (
+        <CompareResults
+          rows={rows}
+          firstName={firstName}
+          secondName={secondName}
+          onlyDifferent={onlyDifferent}
+          onOnlyDifferentChange={setOnlyDifferent}
+          filters={filters}
+          onFilterChange={(column, value) =>
+            setFilters((current) => ({ ...current, [column]: value }))
+          }
+          showFilters={showFilters}
+          onToggleFilters={() => setShowFilters((value) => !value)}
+          onDescriptionPress={onDescriptionPress}
+          onExplanationPress={onDescriptionPress}
+          webservice
+        />
+      )}
+    </View>
+  );
+}
+function CompareOutput(
+  props: React.ComponentProps<typeof CompareResults> & {
+    left: CompareSelection;
+    right: CompareSelection;
+    loadWebServices: (
+      selection: CompareSelection,
+    ) => Promise<WebServiceOption[]>;
+    compareWebServices: (
+      firstCode: string,
+      secondCode: string,
+    ) => Promise<CompareResult[]>;
+  },
+) {
   const [tab, setTab] = useState<"system" | "webservices" | "features">(
     "system",
   );
@@ -263,12 +447,18 @@ function CompareOutput(props: React.ComponentProps<typeof CompareResults>) {
       </View>
       {tab === "system" ? (
         <CompareResults {...props} />
-      ) : (
-        <ConstructionPanel
-          title={
-            tab === "webservices" ? "Parâmetros de Webservices" : "Features"
-          }
+      ) : tab === "webservices" ? (
+        <WebservicesComparison
+          left={props.left}
+          right={props.right}
+          firstName={props.firstName}
+          secondName={props.secondName}
+          loadWebServices={props.loadWebServices}
+          compareWebServices={props.compareWebServices}
+          onDescriptionPress={props.onExplanationPress}
         />
+      ) : (
+        <ConstructionPanel title={"Features"} />
       )}
     </View>
   );
@@ -350,6 +540,7 @@ function CompareResults({
   onToggleFilters,
   onDescriptionPress,
   onExplanationPress,
+  webservice = false,
 }: {
   rows: CompareResult[];
   firstName: string;
@@ -362,6 +553,7 @@ function CompareResults({
   onToggleFilters: () => void;
   onDescriptionPress: (row: CompareResult) => void;
   onExplanationPress: (row: CompareResult) => void;
+  webservice?: boolean;
 }) {
   const isDifferent = (row: CompareResult) =>
     row.valuesDifferent || !row.foundInFirst || !row.foundInSecond;
@@ -464,13 +656,13 @@ function CompareResults({
         <View style={styles.resultsTable}>
           <View style={[styles.resultRow, styles.resultHead]}>
             <Text style={[styles.tableHeadText, styles.codeResult]}>
-              CÓDIGO
+              {webservice ? "PARÂMETRO" : "CÓDIGO"}
             </Text>
             <Text style={[styles.tableHeadText, styles.descriptionResult]}>
-              DESCRIÇÃO
+              {webservice ? "DESCRIÇÃO" : "DESCRIÇÃO"}
             </Text>
             <Text style={[styles.tableHeadText, styles.explanationResult]}>
-              EXPLICAÇÃO
+              {webservice ? "" : "EXPLICAÇÃO"}
             </Text>
             <Text style={[styles.tableHeadText, styles.valueResult]}>
               {firstName.toUpperCase()}
@@ -541,27 +733,39 @@ function CompareResults({
                 {row.cdParametro}
               </Text>
               <View style={styles.descriptionResult}>
-                <View style={styles.descriptionLine}>
-                  <Text style={styles.cellText}>{row.deParametro}</Text>
-                  {row.descriptionDifferent && (
-                    <Pressable
-                      accessibilityLabel="Ver diferença na descrição"
-                      onPress={() => onDescriptionPress(row)}
-                      style={styles.warning}
-                    >
-                      <Text style={styles.warningText}>!</Text>
-                    </Pressable>
-                  )}
-                </View>
+                {webservice ? (
+                  <Pressable
+                    style={styles.ellipsisButton}
+                    onPress={() => onExplanationPress(row)}
+                    accessibilityLabel="Ver descrição"
+                  >
+                    <Text style={styles.ellipsisText}>•••</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.descriptionLine}>
+                    <Text style={styles.cellText}>{row.deParametro}</Text>
+                    {row.descriptionDifferent && (
+                      <Pressable
+                        accessibilityLabel="Ver diferença na descrição"
+                        onPress={() => onDescriptionPress(row)}
+                        style={styles.warning}
+                      >
+                        <Text style={styles.warningText}>!</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
               </View>
               <View style={styles.explanationResult}>
-                <Pressable
-                  style={styles.ellipsisButton}
-                  onPress={() => onExplanationPress(row)}
-                  accessibilityLabel="Ver explicação"
-                >
-                  <Text style={styles.ellipsisText}>•••</Text>
-                </Pressable>
+                {!webservice && (
+                  <Pressable
+                    style={styles.ellipsisButton}
+                    onPress={() => onExplanationPress(row)}
+                    accessibilityLabel="Ver explicação"
+                  >
+                    <Text style={styles.ellipsisText}>•••</Text>
+                  </Pressable>
+                )}
               </View>
               <Text style={[styles.cellText, styles.valueResult]}>
                 {row.firstValue ?? "—"}
@@ -1846,6 +2050,44 @@ export default function App() {
         onSave={(form) => saveUser(form, currentUser)}
       />
     );
+  const webServiceConnection = (selection: CompareSelection) => {
+    const connection = connections.find(
+      (item) => item.id === selection.connectionId,
+    );
+    if (!connection || !selection.password)
+      throw new Error(
+        "Selecione a base e informe a senha para consultar os Webservices.",
+      );
+    return {
+      ...connection,
+      username: selection.username,
+      password: selection.password,
+    };
+  };
+  const loadWebServices = async (
+    selection: CompareSelection,
+  ): Promise<WebServiceOption[]> => {
+    const result = await request("/api/webservices", {
+      method: "POST",
+      body: JSON.stringify({ connection: webServiceConnection(selection) }),
+    });
+    return result.webservices || [];
+  };
+  const compareWebServices = async (
+    firstCode: string,
+    secondCode: string,
+  ): Promise<CompareResult[]> => {
+    const result = await request("/api/webservices/compare", {
+      method: "POST",
+      body: JSON.stringify({
+        first: webServiceConnection(leftCompare),
+        second: webServiceConnection(rightCompare),
+        firstServiceCode: firstCode,
+        secondServiceCode: secondCode,
+      }),
+    });
+    return result.rows || [];
+  };
   const compareBases = async () => {
     try {
       const first = connections.find(
@@ -2272,6 +2514,10 @@ export default function App() {
                         }
                         onDescriptionPress={setDescriptionDetail}
                         onExplanationPress={setExplanationDetail}
+                        left={leftCompare}
+                        right={rightCompare}
+                        loadWebServices={loadWebServices}
+                        compareWebServices={compareWebServices}
                       />
                     )}
                   </>
@@ -3364,7 +3610,12 @@ const styles = StyleSheet.create(
         justifyContent: "center",
       },
       tabIconActive: { backgroundColor: "#DFDCFF" },
-      tabIconText: { color: "#667085", fontSize: 15, fontWeight: "800", lineHeight: 18 },
+      tabIconText: {
+        color: "#667085",
+        fontSize: 15,
+        fontWeight: "800",
+        lineHeight: 18,
+      },
       tabIconTextActive: { color: "#5546CB" },
       sidebarFooter: { gap: 16 },
       userBar: {
@@ -3443,7 +3694,13 @@ const styles = StyleSheet.create(
       settingsPage: { width: "100%" },
       settingsCard: { width: "100%", maxWidth: 720, padding: 24 },
       settingsInput: { minHeight: 46 },
-      settingsHelp: { color: "#667085", fontSize: 13, lineHeight: 19, marginTop: -4, marginBottom: 18 },
+      settingsHelp: {
+        color: "#667085",
+        fontSize: 13,
+        lineHeight: 19,
+        marginTop: -4,
+        marginBottom: 18,
+      },
       settingsButton: { alignSelf: "flex-start" },
       input: {
         height: 40,
@@ -3495,6 +3752,7 @@ const styles = StyleSheet.create(
       compareSubtabActive: { borderBottomColor: "#6558F5" },
       compareSubtabText: { color: "#667085", fontSize: 13, fontWeight: "700" },
       compareSubtabTextActive: { color: "#5546CB" },
+      webserviceSelectors: { flexDirection: "row", gap: 16, marginBottom: 18 },
       constructionPanel: {
         minHeight: 370,
         backgroundColor: "#FFFFFF",
