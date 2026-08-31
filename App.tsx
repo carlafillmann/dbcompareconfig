@@ -4203,14 +4203,16 @@ const styles = StyleSheet.create(
         left: 170,
       },
       sidebar: {
-        width: 240,
+        width: 220,
+        minWidth: 220,
+        maxWidth: 220,
         backgroundColor: "#FFFFFF",
         borderRightWidth: 1,
         borderRightColor: "#EAECF0",
       },
       sidebarContent: {
         flexGrow: 1,
-        padding: 24,
+        padding: 16,
         justifyContent: "space-between",
       },
       sidebarBrand: { gap: 7 },
