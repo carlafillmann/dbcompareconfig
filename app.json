@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "DB Compare Config",
+    "name": "DBCompare",
     "slug": "db-compare-config",
     "version": "1.0.0",
     "icon": "./assets/dbcompare-logo.png",
