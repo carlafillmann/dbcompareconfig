@@ -3105,6 +3105,7 @@ export default function App() {
                   <Field label="Tipo">
                     <View style={styles.pickerBox}>
                       <Picker
+                        style={styles.fullPicker}
                         selectedValue={form.environmentType}
                         onValueChange={(value: EnvironmentType) =>
                           update("environmentType", value)
@@ -3123,6 +3124,7 @@ export default function App() {
                   <Field label="Tipo de banco">
                     <View style={styles.pickerBox}>
                       <Picker
+                        style={styles.fullPicker}
                         selectedValue={form.databaseType}
                         onValueChange={(value: DatabaseType) => {
                           update("databaseType", value);
@@ -3391,6 +3393,8 @@ const styles = StyleSheet.create(
         height: "100%",
         color: "#172033",
         backgroundColor: "transparent",
+        borderWidth: 0,
+        outlineStyle: "none",
       },
       loginPage: {
         flex: 1,
