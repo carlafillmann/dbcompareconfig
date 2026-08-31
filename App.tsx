@@ -136,7 +136,7 @@ export default function App() {
     const styleId = 'dbcompare-theme-styles';
     let element = document.getElementById(styleId) as HTMLStyleElement | null;
     if (!element) { element = document.createElement('style'); element.id = styleId; document.head.appendChild(element); }
-    element.textContent = '#dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img { opacity: 0; }';
+    element.textContent = 'form label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-weight: 800 !important; } #dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img { opacity: 0; }';
     document.getElementById('dbcompare-app')?.classList.toggle('dark-theme', theme === 'dark');
     const sidebarLogo = document.querySelector('#dbcompare-app img') as HTMLElement | null;
     if (sidebarLogo && theme === 'light') sidebarLogo.style.cssText = 'width:164px;height:130px;box-sizing:border-box;background:#071D3A;border:2px solid #101828;border-radius:16px;';
