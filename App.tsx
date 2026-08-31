@@ -2046,6 +2046,9 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showTestForm, setShowTestForm] = useState(false);
+  const [testPassword, setTestPassword] = useState("");
+  const [testMessage, setTestMessage] = useState<Notice>(null);
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
   const [parameterGroups, setParameterGroups] = useState<
     FirestoreParameterGroup[]
@@ -2524,22 +2527,41 @@ export default function App() {
   };
   const selectedName = (id: string, fallback: string) =>
     connections.find((connection) => connection.id === id)?.name || fallback;
+  const openTest = () => {
+    try {
+      validate(false);
+      setTestPassword("");
+      setTestMessage(null);
+      setShowTestForm(true);
+    } catch (error) {
+      setNotice({
+        type: "error",
+        title: "Dados incompletos",
+        message: errorText(error),
+      });
+    }
+  };
   const test = async () => {
     try {
-      validate();
+      if (!testPassword)
+        throw new Error("Informe a senha para testar a conexão.");
       setSaving(true);
-      setNotice(null);
+      setTestMessage(null);
       const result = await request("/api/connections/test", {
         method: "POST",
-        body: JSON.stringify({ ...form, port: Number(form.port) }),
+        body: JSON.stringify({
+          ...form,
+          password: testPassword,
+          port: Number(form.port),
+        }),
       });
-      setNotice({
+      setTestMessage({
         type: "success",
         title: "Conexão estabelecida",
         message: result.message,
       });
     } catch (error) {
-      setNotice({
+      setTestMessage({
         type: "error",
         title: "Falha no teste",
         message: errorText(error),
@@ -3199,25 +3221,10 @@ export default function App() {
                       placeholderTextColor="#98A2B3"
                     />
                   </Field>
-                  <Field label="Senha">
-                    <TextInput
-                      style={styles.input}
-                      value={form.password}
-                      onChangeText={(value) => update("password", value)}
-                      secureTextEntry
-                      autoCapitalize="none"
-                      placeholder={
-                        editingId
-                          ? "Informe apenas para alterar ou testar"
-                          : "Senha do banco"
-                      }
-                      placeholderTextColor="#98A2B3"
-                    />
-                  </Field>
                   <View style={styles.formActions}>
                     <Pressable
                       style={styles.secondaryButton}
-                      onPress={test}
+                      onPress={openTest}
                       disabled={saving}
                     >
                       {saving ? (
@@ -3240,6 +3247,70 @@ export default function App() {
                   </View>
                 </View>
               </ScrollView>
+            </View>
+          </Modal>
+          <Modal
+            visible={showTestForm}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowTestForm(false)}
+          >
+            <View style={styles.overlay}>
+              <View style={[styles.modal, styles.testConnectionModal]}>
+                <View style={styles.modalHeader}>
+                  <View>
+                    <Text style={styles.modalTitle}>Testar conexão</Text>
+                    <Text style={styles.modalSubtitle}>
+                      Informe a senha somente para este teste. Ela não será
+                      gravada.
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => setShowTestForm(false)}>
+                    <Text style={styles.close}>×</Text>
+                  </Pressable>
+                </View>
+                {testMessage && <NoticeBox notice={testMessage} />}
+                <Field label="Nome da conexão">
+                  <TextInput
+                    style={styles.input}
+                    value={form.name}
+                    editable={false}
+                  />
+                </Field>
+                <Field label="Usuário cadastrado">
+                  <TextInput
+                    style={styles.input}
+                    value={form.username}
+                    editable={false}
+                    autoCapitalize="none"
+                  />
+                </Field>
+                <Field label="Senha">
+                  <TextInput
+                    style={styles.input}
+                    value={testPassword}
+                    onChangeText={setTestPassword}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoFocus
+                    placeholder="Senha do banco"
+                    placeholderTextColor="#98A2B3"
+                  />
+                </Field>
+                <View style={styles.formActions}>
+                  <Pressable
+                    style={[styles.primaryButton, saving && styles.disabled]}
+                    onPress={test}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.primaryText}>Executar teste</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </Modal>
           <Modal
@@ -3361,6 +3432,12 @@ const styles = StyleSheet.create(
       passwordInput: { flex: 1 },
       passwordModal: {
         maxWidth: 480,
+        alignSelf: "center",
+        marginTop: "auto",
+        marginBottom: "auto",
+      },
+      testConnectionModal: {
+        maxWidth: 520,
         alignSelf: "center",
         marginTop: "auto",
         marginBottom: "auto",
