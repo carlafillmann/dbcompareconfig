@@ -468,6 +468,7 @@ function FeaturesComparison({
           onToggleFilters={() => setShowFilters((value) => !value)}
           onDescriptionPress={onDescriptionPress}
           onExplanationPress={onDescriptionPress}
+          features
         />
       )}
     </View>
@@ -647,6 +648,7 @@ function CompareResults({
   onDescriptionPress,
   onExplanationPress,
   webservice = false,
+  features = false,
   parameterGroups = [],
   selectedParameterGroupId = "",
   onParameterGroupChange,
@@ -663,6 +665,7 @@ function CompareResults({
   onDescriptionPress: (row: CompareResult) => void;
   onExplanationPress: (row: CompareResult) => void;
   webservice?: boolean;
+  features?: boolean;
   parameterGroups?: FirestoreParameterGroup[];
   selectedParameterGroupId?: string;
   onParameterGroupChange?: (id: string) => void;
@@ -806,22 +809,27 @@ function CompareResults({
                 styles.tableHeadText,
                 styles.codeResult,
                 webservice && styles.webserviceCodeResult,
+                features && styles.featureCodeResult,
               ]}
             >
-              {webservice ? "PARÂMETRO" : "CÓDIGO"}
+              {features ? "FEATURE" : webservice ? "PARÂMETRO" : "CÓDIGO"}
             </Text>
-            <Text
-              style={[
-                styles.tableHeadText,
-                styles.descriptionResult,
-                webservice && styles.webserviceDescriptionResult,
-              ]}
-            >
-              {webservice ? "DESCRIÇÃO" : "DESCRIÇÃO"}
-            </Text>
-            <Text style={[styles.tableHeadText, styles.explanationResult]}>
-              {webservice ? "" : "EXPLICAÇÃO"}
-            </Text>
+            {!features && (
+              <Text
+                style={[
+                  styles.tableHeadText,
+                  styles.descriptionResult,
+                  webservice && styles.webserviceDescriptionResult,
+                ]}
+              >
+                {webservice ? "DESCRIÇÃO" : "DESCRIÇÃO"}
+              </Text>
+            )}
+            {!features && (
+              <Text style={[styles.tableHeadText, styles.explanationResult]}>
+                {webservice ? "" : "EXPLICAÇÃO"}
+              </Text>
+            )}
             <Text style={[styles.tableHeadText, styles.valueResult]}>
               {firstName.toUpperCase()}
             </Text>
@@ -841,28 +849,32 @@ function CompareResults({
           </View>
           {showFilters && (
             <View style={[styles.resultRow, styles.filterRow]}>
-              <TextInput
-                style={[
-                  styles.filterInput,
-                  styles.codeResult,
-                  webservice && styles.webserviceCodeResult,
-                ]}
-                value={filters.code}
-                onChangeText={(value) => onFilterChange("code", value)}
-                placeholder="Filtrar"
-                placeholderTextColor="#98A2B3"
-              />
-              <TextInput
-                style={[
-                  styles.filterInput,
-                  styles.descriptionResult,
-                  webservice && styles.webserviceDescriptionResult,
-                ]}
-                value={filters.description}
-                onChangeText={(value) => onFilterChange("description", value)}
-                placeholder="Filtrar"
-                placeholderTextColor="#98A2B3"
-              />
+              {!features && (
+                <TextInput
+                  style={[
+                    styles.filterInput,
+                    styles.codeResult,
+                    webservice && styles.webserviceCodeResult,
+                  ]}
+                  value={filters.code}
+                  onChangeText={(value) => onFilterChange("code", value)}
+                  placeholder="Filtrar"
+                  placeholderTextColor="#98A2B3"
+                />
+              )}
+              {!features && (
+                <TextInput
+                  style={[
+                    styles.filterInput,
+                    styles.descriptionResult,
+                    webservice && styles.webserviceDescriptionResult,
+                  ]}
+                  value={filters.description}
+                  onChangeText={(value) => onFilterChange("description", value)}
+                  placeholder="Filtrar"
+                  placeholderTextColor="#98A2B3"
+                />
+              )}
               <TextInput
                 style={[styles.filterInput, styles.explanationResult]}
                 value={filters.explanation}
@@ -900,50 +912,55 @@ function CompareResults({
                   styles.cellText,
                   styles.codeResult,
                   webservice && styles.webserviceCodeResult,
+                  features && styles.featureCodeResult,
                 ]}
               >
                 {row.cdParametro}
               </Text>
-              <View
-                style={[
-                  styles.descriptionResult,
-                  webservice && styles.webserviceDescriptionResult,
-                ]}
-              >
-                {webservice ? (
-                  <Pressable
-                    style={styles.ellipsisButton}
-                    onPress={() => onExplanationPress(row)}
-                    accessibilityLabel="Ver descrição"
-                  >
-                    <Text style={styles.ellipsisText}>•••</Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.descriptionLine}>
-                    <Text style={styles.cellText}>{row.deParametro}</Text>
-                    {row.descriptionDifferent && (
-                      <Pressable
-                        accessibilityLabel="Ver diferença na descrição"
-                        onPress={() => onDescriptionPress(row)}
-                        style={styles.warning}
-                      >
-                        <Text style={styles.warningText}>!</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                )}
-              </View>
-              <View style={styles.explanationResult}>
-                {!webservice && (
-                  <Pressable
-                    style={styles.ellipsisButton}
-                    onPress={() => onExplanationPress(row)}
-                    accessibilityLabel="Ver explicação"
-                  >
-                    <Text style={styles.ellipsisText}>•••</Text>
-                  </Pressable>
-                )}
-              </View>
+              {!features && (
+                <View
+                  style={[
+                    styles.descriptionResult,
+                    webservice && styles.webserviceDescriptionResult,
+                  ]}
+                >
+                  {webservice ? (
+                    <Pressable
+                      style={styles.ellipsisButton}
+                      onPress={() => onExplanationPress(row)}
+                      accessibilityLabel="Ver descrição"
+                    >
+                      <Text style={styles.ellipsisText}>•••</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.descriptionLine}>
+                      <Text style={styles.cellText}>{row.deParametro}</Text>
+                      {row.descriptionDifferent && (
+                        <Pressable
+                          accessibilityLabel="Ver diferença na descrição"
+                          onPress={() => onDescriptionPress(row)}
+                          style={styles.warning}
+                        >
+                          <Text style={styles.warningText}>!</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+              {!features && (
+                <View style={styles.explanationResult}>
+                  {!webservice && (
+                    <Pressable
+                      style={styles.ellipsisButton}
+                      onPress={() => onExplanationPress(row)}
+                      accessibilityLabel="Ver explicação"
+                    >
+                      <Text style={styles.ellipsisText}>•••</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
               <Text style={[styles.cellText, styles.valueResult]}>
                 {row.firstValue ?? "—"}
               </Text>
@@ -3661,6 +3678,7 @@ const styles = StyleSheet.create(
       descriptionResult: { width: 290, justifyContent: "center" },
       webserviceCodeResult: { width: 380 },
       webserviceDescriptionResult: { width: 90 },
+      featureCodeResult: { width: 420 },
       valueResult: { width: 220 },
       statusResult: { width: 160, justifyContent: "center" },
       descriptionLine: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -4252,7 +4270,12 @@ const styles = StyleSheet.create(
         gap: 7,
       },
       resultsSummary: { gap: 16 },
-      resultsCountLine: { flexDirection: "row", alignSelf: "stretch", alignItems: "center", gap: 8 },
+      resultsCountLine: {
+        flexDirection: "row",
+        alignSelf: "stretch",
+        alignItems: "center",
+        gap: 8,
+      },
       resultsCountIcon: { width: 27, height: 27 },
       parameterGroupFilter: {
         flexDirection: "row",
