@@ -2743,7 +2743,11 @@ export default function App() {
         <View pointerEvents="none" style={styles.watermarkGreen} />
         <View pointerEvents="none" style={styles.watermarkRing} />
         <View style={styles.appShell}>
-          <View style={styles.sidebar}>
+          <ScrollView
+            style={styles.sidebar}
+            contentContainerStyle={styles.sidebarContent}
+            showsVerticalScrollIndicator
+          >
             <View style={styles.sidebarBrand}>
               <Image
                 source={require("./assets/dbcompare-logo.png")}
@@ -2900,7 +2904,7 @@ export default function App() {
                 </Pressable>
               </View>
             </View>
-          </View>
+          </ScrollView>
           <ScrollView contentContainerStyle={styles.mainContent}>
             {activeTab === "administrator" && (
               <View style={styles.adminPage}>
@@ -4203,6 +4207,9 @@ const styles = StyleSheet.create(
         backgroundColor: "#FFFFFF",
         borderRightWidth: 1,
         borderRightColor: "#EAECF0",
+      },
+      sidebarContent: {
+        flexGrow: 1,
         padding: 24,
         justifyContent: "space-between",
       },
