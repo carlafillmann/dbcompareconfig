@@ -1949,7 +1949,7 @@ function ParameterGroupsPanel({
                   </Text>
                 </View>
                 <Text style={[styles.userState, styles.groupParameterCount]}>
-                  {group.parameterCodes.length} parâmetros
+                  {group.parameterCodes.length}
                 </Text>
               </Pressable>
             ))}
@@ -3555,12 +3555,12 @@ const styles = StyleSheet.create(
         borderBottomColor: "#EAECF0",
       },
       groupCodesInput: {
-        minHeight: 90,
-        height: 90,
+        minHeight: 115,
+        height: 115,
         textAlignVertical: "top",
         paddingTop: 10,
       },
-      usersListPanel: { width: 330, maxHeight: 540 },
+      usersListPanel: { width: 330, maxHeight: 570 },
       userFormPanel: { flex: 1, padding: 22 },
       fullPicker: {
         width: "100%",
