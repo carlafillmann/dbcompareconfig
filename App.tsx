@@ -50,7 +50,7 @@ function CompareResults({ rows, firstName, secondName, onlyDifferent, onOnlyDiff
 function LoginScreen({ onLogin }: { onLogin: (username: string, password: string) => Promise<void> }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
   const submit = async () => { try { setLoading(true); setError(''); await onLogin(username, password); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } };
-  return <View style={styles.loginPage}><View style={styles.loginCard}><Image source={require('./assets/dbcompare-logo.png')} style={styles.loginLogo} resizeMode="contain" /><Text style={styles.loginTitle}>DBCompare</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}<Field label="Usuário"><TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="characters" placeholder="Seu usuário" placeholderTextColor="#98A2B3" /></Field><Field label="Senha"><TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Sua senha" placeholderTextColor="#98A2B3" onSubmitEditing={submit} /></Field><Pressable style={[styles.primaryButton, loading && styles.disabled]} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Entrar</Text>}</Pressable></View></View>;
+  return <View style={styles.loginPage}><View style={styles.loginCard}><Image source={require('./assets/dbcompare-logo.png')} style={styles.loginLogo} resizeMode="contain" /><Text style={styles.loginTitle}>DBCompare</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}<Field label="Usuário"><TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="characters" autoComplete="username" placeholder="Seu usuário" placeholderTextColor="#98A2B3" /></Field><Field label="Senha"><TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" placeholder="Sua senha" placeholderTextColor="#98A2B3" onSubmitEditing={submit} /></Field><Pressable style={[styles.primaryButton, loading && styles.disabled]} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Entrar</Text>}</Pressable></View></View>;
 }
 
 function UsersModal({ visible, users, initialUser = null, canManage, onClose, onSave }: { visible: boolean; users: FirestoreUserProfile[]; initialUser?: FirestoreUserProfile | null; canManage: boolean; onClose: () => void; onSave: (form: UserForm, editing: FirestoreUserProfile | null) => Promise<void> }) {
@@ -103,8 +103,10 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
   const [showUsers, setShowUsers] = useState(false);
-  // Cada abertura exige uma nova autenticação; nenhuma sessão anterior é reutilizada.
-  const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(() => {
+    if (Platform.OS !== 'web') return null;
+    try { return JSON.parse(window.localStorage.getItem('dbcompare-session') || 'null'); } catch { return null; }
+  });
   // O id será fornecido pelo login quando o Firebase Authentication estiver
   // habilitado. Enquanto isso, a preferência permanece no navegador para que
   // a alternância já funcione nesta versão.
