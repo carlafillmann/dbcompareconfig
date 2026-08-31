@@ -59,6 +59,11 @@ export type FirestoreConnection = {
 // Firestore, mas não é exibido no formulário de cadastro de usuários.
 export type UserThemePreference = "light" | "dark";
 export type ApiVersionSettings = { latestVersion: string };
+export type FirestoreParameterGroup = {
+  id: string;
+  description: string;
+  parameterCodes: string[];
+};
 export type FirestoreUserProfile = {
   id: string;
   username: string;
@@ -191,6 +196,35 @@ export async function updateUser(user: FirestoreUserProfile) {
     ...data,
     ...(email ? { email } : { email: "" }),
   });
+}
+
+export async function listParameterGroups() {
+  const result = await getDocs(collection(firestore, "parameterGroups"));
+  return result.docs
+    .map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        description: String(data.description || ""),
+        parameterCodes: Array.isArray(data.parameterCodes)
+          ? data.parameterCodes.map(String)
+          : [],
+      } as FirestoreParameterGroup;
+    })
+    .sort((first, second) =>
+      first.description.localeCompare(second.description, "pt-BR"),
+    );
+}
+
+export async function createParameterGroup(
+  group: Omit<FirestoreParameterGroup, "id">,
+) {
+  await addDoc(collection(firestore, "parameterGroups"), group);
+}
+
+export async function updateParameterGroup(group: FirestoreParameterGroup) {
+  const { id, ...data } = group;
+  await updateDoc(doc(firestore, "parameterGroups", id), data);
 }
 
 export async function getApiVersionSettings(): Promise<ApiVersionSettings> {

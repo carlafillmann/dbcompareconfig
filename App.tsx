@@ -16,14 +16,18 @@ import {
 } from "react-native";
 import {
   createConnection,
+  createParameterGroup,
   createUser,
   deleteConnection,
   FirestoreConnection,
+  FirestoreParameterGroup,
   FirestoreUserProfile,
   getApiVersionSettings,
   listConnections,
+  listParameterGroups,
   listUsers,
   updateConnection,
+  updateParameterGroup,
   updateUser,
   updateUserTheme,
   UserThemePreference,
@@ -542,6 +546,9 @@ function CompareResults({
   onDescriptionPress,
   onExplanationPress,
   webservice = false,
+  parameterGroups = [],
+  selectedParameterGroupId = "",
+  onParameterGroupChange,
 }: {
   rows: CompareResult[];
   firstName: string;
@@ -555,6 +562,9 @@ function CompareResults({
   onDescriptionPress: (row: CompareResult) => void;
   onExplanationPress: (row: CompareResult) => void;
   webservice?: boolean;
+  parameterGroups?: FirestoreParameterGroup[];
+  selectedParameterGroupId?: string;
+  onParameterGroupChange?: (id: string) => void;
 }) {
   const isDifferent = (row: CompareResult) =>
     row.valuesDifferent || !row.foundInFirst || !row.foundInSecond;
@@ -563,6 +573,10 @@ function CompareResults({
   const displayed = rows.filter(
     (row) =>
       (!onlyDifferent || isDifferent(row)) &&
+      (!selectedParameterGroupId ||
+        parameterGroups
+          .find((group) => group.id === selectedParameterGroupId)
+          ?.parameterCodes.includes(row.cdParametro)) &&
       [
         row.cdParametro,
         row.deParametro,
@@ -651,6 +665,29 @@ function CompareResults({
               Exibir apenas parâmetros com valores distintos
             </Text>
           </Pressable>
+          {!webservice && onParameterGroupChange && (
+            <View style={styles.parameterGroupFilter}>
+              <Text style={styles.parameterGroupLabel}>
+                Filtrar grupo de parâmetros
+              </Text>
+              <View style={styles.parameterGroupPicker}>
+                <Picker
+                  style={styles.fullPicker}
+                  selectedValue={selectedParameterGroupId}
+                  onValueChange={onParameterGroupChange}
+                >
+                  <Picker.Item label="Todos os parâmetros" value="" />
+                  {parameterGroups.map((group) => (
+                    <Picker.Item
+                      key={group.id}
+                      label={group.description}
+                      value={group.id}
+                    />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+          )}
         </View>
       </View>
       <ScrollView horizontal>
@@ -1585,6 +1622,163 @@ function UserProfileModal({
   );
 }
 
+function ParameterGroupsPanel({
+  groups,
+  onSave,
+}: {
+  groups: FirestoreParameterGroup[];
+  onSave: (
+    group: Omit<FirestoreParameterGroup, "id">,
+    editing: FirestoreParameterGroup | null,
+  ) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<FirestoreParameterGroup | null>(null);
+  const [description, setDescription] = useState("");
+  const [codes, setCodes] = useState("");
+  const [filter, setFilter] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const reset = () => {
+    setEditing(null);
+    setDescription("");
+    setCodes("");
+    setError("");
+  };
+  const edit = (group: FirestoreParameterGroup) => {
+    setEditing(group);
+    setDescription(group.description);
+    setCodes(group.parameterCodes.join(", "));
+    setError("");
+  };
+  const save = async () => {
+    try {
+      const parameterCodes = [
+        ...new Set(
+          codes
+            .split(",")
+            .map((code) => code.trim().toLocaleUpperCase())
+            .filter(Boolean),
+        ),
+      ];
+      if (!description.trim() || !parameterCodes.length)
+        throw new Error(
+          "Informe a descrição e ao menos um código de parâmetro.",
+        );
+      setSaving(true);
+      await onSave(
+        { description: description.trim(), parameterCodes },
+        editing,
+      );
+      reset();
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const term = filter.trim().toLocaleUpperCase();
+  const displayed = groups.filter(
+    (group) =>
+      !term ||
+      group.description.toLocaleUpperCase().includes(term) ||
+      group.parameterCodes.some((code) =>
+        code.toLocaleUpperCase().includes(term),
+      ),
+  );
+  return (
+    <View style={styles.usersPage}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Grupos de Parâmetros</Text>
+          <Text style={styles.sectionSubtitle}>
+            Organize códigos de parâmetros para filtrar as comparações.
+          </Text>
+        </View>
+        <Pressable style={styles.primaryButton} onPress={reset}>
+          <Text style={styles.primaryText}>+ Novo grupo</Text>
+        </Pressable>
+      </View>
+      <View style={styles.usersLayout}>
+        <View style={[styles.card, styles.usersListPanel]}>
+          <View style={styles.groupFilter}>
+            <TextInput
+              style={styles.input}
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="Filtrar descrição ou código"
+              placeholderTextColor="#98A2B3"
+            />
+          </View>
+          <ScrollView>
+            {displayed.map((group) => (
+              <Pressable
+                key={group.id}
+                style={[
+                  styles.userListItem,
+                  editing?.id === group.id && styles.userListItemActive,
+                ]}
+                onPress={() => edit(group)}
+              >
+                <View>
+                  <Text style={styles.connectionName}>{group.description}</Text>
+                  <Text style={styles.connectionSub}>
+                    {group.parameterCodes.join(", ")}
+                  </Text>
+                </View>
+                <Text style={styles.userState}>
+                  {group.parameterCodes.length}
+                </Text>
+              </Pressable>
+            ))}
+            {!displayed.length && (
+              <Text style={styles.muted}>Nenhum grupo encontrado.</Text>
+            )}
+          </ScrollView>
+        </View>
+        <View style={[styles.card, styles.userFormPanel]}>
+          <Text style={styles.userFormTitle}>
+            {editing ? "Editar grupo" : "Novo grupo"}
+          </Text>
+          {error ? <Text style={styles.loginError}>{error}</Text> : null}
+          <Field label="Descrição">
+            <TextInput
+              style={styles.input}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Ex.: Parâmetros de financeiro"
+              placeholderTextColor="#98A2B3"
+            />
+          </Field>
+          <Field label="Códigos de parâmetros">
+            <TextInput
+              style={[styles.input, styles.groupCodesInput]}
+              value={codes}
+              onChangeText={setCodes}
+              multiline
+              placeholder="Ex.: 1001, 1002, 1003"
+              placeholderTextColor="#98A2B3"
+            />
+          </Field>
+          <Text style={styles.settingsHelp}>
+            Informe os códigos separados por vírgula.
+          </Text>
+          <Pressable
+            style={[styles.primaryButton, saving && styles.disabled]}
+            onPress={save}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryText}>Salvar grupo</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function SettingsPanel({
   ignoredParameters,
   onSave,
@@ -1675,8 +1869,9 @@ function SettingsPanel({
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    "compare" | "connections" | "settings" | "users"
+    "compare" | "connections" | "settings" | "administrator"
   >("compare");
+  const [adminTab, setAdminTab] = useState<"users" | "groups">("users");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [leftCompare, setLeftCompare] = useState<CompareSelection>({
     connectionId: "",
@@ -1717,6 +1912,10 @@ export default function App() {
   const [notice, setNotice] = useState<Notice>(null);
   const [showForm, setShowForm] = useState(false);
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
+  const [parameterGroups, setParameterGroups] = useState<
+    FirestoreParameterGroup[]
+  >([]);
+  const [selectedParameterGroupId, setSelectedParameterGroupId] = useState("");
   const [showUsers, setShowUsers] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(
     () => {
@@ -1770,6 +1969,9 @@ export default function App() {
   };
   const loadUsers = async () => {
     setUsers(await listUsers());
+  };
+  const loadParameterGroups = async () => {
+    setParameterGroups(await listParameterGroups());
   };
   const login = async (username: string, password: string) => {
     const normalized = username.trim().toLocaleUpperCase();
@@ -1835,8 +2037,17 @@ export default function App() {
         );
     }
   };
+  const saveParameterGroup = async (
+    group: Omit<FirestoreParameterGroup, "id">,
+    editing: FirestoreParameterGroup | null,
+  ) => {
+    if (editing) await updateParameterGroup({ id: editing.id, ...group });
+    else await createParameterGroup(group);
+    await loadParameterGroups();
+  };
   useEffect(() => {
     loadConnections();
+    void loadParameterGroups().catch(() => undefined);
   }, []);
   useEffect(() => {
     void getApiVersionSettings()
@@ -2052,7 +2263,8 @@ export default function App() {
     setCurrentUser(null);
   };
   if (!currentUser) return <LoginScreen onLogin={login} />;
-  const isUsersTab = () => activeTab === "users";
+  const isUsersTab = () =>
+    activeTab === "administrator" && adminTab === "users";
   if (showUsers && isUsersTab())
     return (
       <UserProfileModal
@@ -2298,12 +2510,12 @@ export default function App() {
               />
               {currentUser.role === "Administrador" && (
                 <Tab
-                  text="Usuários"
-                  icon="♙"
-                  active={activeTab === "users"}
+                  text="Administrador"
+                  icon="⚙"
+                  active={activeTab === "administrator"}
                   onPress={() => {
                     setShowUsers(false);
-                    setActiveTab("users");
+                    setActiveTab("administrator");
                   }}
                 />
               )}
@@ -2321,7 +2533,8 @@ export default function App() {
                 <Pressable
                   onPress={() => {
                     setShowUsers(true);
-                    setActiveTab("users");
+                    setAdminTab("users");
+                    setActiveTab("administrator");
                   }}
                 >
                   <Text style={styles.userName}>{currentUser.username}</Text>
@@ -2426,8 +2639,51 @@ export default function App() {
             </View>
           </View>
           <ScrollView contentContainerStyle={styles.mainContent}>
-            {activeTab === "users" && (
-              <UsersPanel users={users} onSave={saveUser} />
+            {activeTab === "administrator" && (
+              <View style={styles.adminPage}>
+                <View style={styles.compareSubtabs}>
+                  <Pressable
+                    style={[
+                      styles.compareSubtab,
+                      adminTab === "users" && styles.compareSubtabActive,
+                    ]}
+                    onPress={() => setAdminTab("users")}
+                  >
+                    <Text
+                      style={[
+                        styles.compareSubtabText,
+                        adminTab === "users" && styles.compareSubtabTextActive,
+                      ]}
+                    >
+                      Usuários
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.compareSubtab,
+                      adminTab === "groups" && styles.compareSubtabActive,
+                    ]}
+                    onPress={() => setAdminTab("groups")}
+                  >
+                    <Text
+                      style={[
+                        styles.compareSubtabText,
+                        adminTab === "groups" && styles.compareSubtabTextActive,
+                      ]}
+                    >
+                      Grupos de Parâmetros
+                    </Text>
+                  </Pressable>
+                </View>
+                {adminTab === "users" ? (
+                  <UsersPanel users={users} onSave={saveUser} />
+                ) : (
+                  <ParameterGroupsPanel
+                    groups={parameterGroups}
+                    onSave={saveParameterGroup}
+                  />
+                )}
+              </View>
             )}
             {activeTab === "settings" && (
               <SettingsPanel
@@ -2539,6 +2795,9 @@ export default function App() {
                         right={rightCompare}
                         loadWebServices={loadWebServices}
                         compareWebServices={compareWebServices}
+                        parameterGroups={parameterGroups}
+                        selectedParameterGroupId={selectedParameterGroupId}
+                        onParameterGroupChange={setSelectedParameterGroupId}
                       />
                     )}
                   </>
@@ -2967,6 +3226,18 @@ const styles = StyleSheet.create(
         marginBottom: 14,
       },
       usersPage: { width: "100%" },
+      adminPage: { width: "100%" },
+      groupFilter: {
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: "#EAECF0",
+      },
+      groupCodesInput: {
+        minHeight: 90,
+        height: 90,
+        textAlignVertical: "top",
+        paddingTop: 10,
+      },
       usersListPanel: { width: 330, maxHeight: 540 },
       userFormPanel: { flex: 1, padding: 22 },
       fullPicker: {
@@ -3747,6 +4018,21 @@ const styles = StyleSheet.create(
         flexDirection: "row-reverse",
         alignItems: "center",
         gap: 14,
+      },
+      parameterGroupFilter: { width: 260, marginTop: 8 },
+      parameterGroupLabel: {
+        color: "#475467",
+        fontSize: 12,
+        fontWeight: "600",
+        marginBottom: 5,
+      },
+      parameterGroupPicker: {
+        height: 36,
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 7,
+        overflow: "hidden",
+        backgroundColor: "#FFFFFF",
       },
       resultsHeading: {
         flexDirection: "row",
