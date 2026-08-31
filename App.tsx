@@ -839,10 +839,22 @@ function CompareResults({
                 {webservice ? "" : "EXPLICAÇÃO"}
               </Text>
             )}
-            <Text style={[styles.tableHeadText, styles.valueResult]}>
+            <Text
+              style={[
+                styles.tableHeadText,
+                styles.valueResult,
+                webservice && styles.webserviceValueResult,
+              ]}
+            >
               {firstName.toUpperCase()}
             </Text>
-            <Text style={[styles.tableHeadText, styles.valueResult]}>
+            <Text
+              style={[
+                styles.tableHeadText,
+                styles.valueResult,
+                webservice && styles.webserviceValueResult,
+              ]}
+            >
               {secondName.toUpperCase()}
             </Text>
             <View style={[styles.statusResult, styles.statusHeader]}>
@@ -893,14 +905,22 @@ function CompareResults({
                 />
               )}
               <TextInput
-                style={[styles.filterInput, styles.valueResult]}
+                style={[
+                  styles.filterInput,
+                  styles.valueResult,
+                  webservice && styles.webserviceValueResult,
+                ]}
                 value={filters.first}
                 onChangeText={(value) => onFilterChange("first", value)}
                 placeholder="Filtrar"
                 placeholderTextColor="#98A2B3"
               />
               <TextInput
-                style={[styles.filterInput, styles.valueResult]}
+                style={[
+                  styles.filterInput,
+                  styles.valueResult,
+                  webservice && styles.webserviceValueResult,
+                ]}
                 value={filters.second}
                 onChangeText={(value) => onFilterChange("second", value)}
                 placeholder="Filtrar"
@@ -975,10 +995,22 @@ function CompareResults({
                   )}
                 </View>
               )}
-              <Text style={[styles.cellText, styles.valueResult]}>
+              <Text
+                style={[
+                  styles.cellText,
+                  styles.valueResult,
+                  webservice && styles.webserviceValueResult,
+                ]}
+              >
                 {row.firstValue ?? "—"}
               </Text>
-              <Text style={[styles.cellText, styles.valueResult]}>
+              <Text
+                style={[
+                  styles.cellText,
+                  styles.valueResult,
+                  webservice && styles.webserviceValueResult,
+                ]}
+              >
                 {row.secondValue ?? "—"}
               </Text>
               <View style={styles.statusResult}>
@@ -3700,9 +3732,10 @@ const styles = StyleSheet.create(
       codeResult: { width: 130 },
       descriptionResult: { width: 290, justifyContent: "center" },
       webserviceCodeResult: { width: 380 },
-      webserviceDescriptionResult: { width: 90 },
+      webserviceDescriptionResult: { width: 80 },
       featureCodeResult: { width: 470 },
       valueResult: { width: 220 },
+      webserviceValueResult: { width: 150 },
       statusResult: { width: 160, justifyContent: "center" },
       descriptionLine: { flexDirection: "row", alignItems: "center", gap: 8 },
       warning: {
