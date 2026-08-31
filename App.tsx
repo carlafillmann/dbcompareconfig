@@ -2963,7 +2963,12 @@ export default function App() {
             )}
             {activeTab === "compare" ? (
               <View>
-                <View style={styles.compareIntro}>
+                <View
+                  style={[
+                    styles.compareIntro,
+                    compareRows && styles.compareIntroAfterComparison,
+                  ]}
+                >
                   <View>
                     <Text style={styles.sectionTitle}>Comparar Bases</Text>
                     <Text style={styles.sectionSubtitle}>
@@ -2978,6 +2983,11 @@ export default function App() {
                         setCompareSelectionCollapsed((collapsed) => !collapsed)
                       }
                     >
+                      <View style={styles.compareSelectionToggleIcon}>
+                        <Text style={styles.compareSelectionToggleIconText}>
+                          {compareSelectionCollapsed ? "⌄" : "⌃"}
+                        </Text>
+                      </View>
                       <Text style={styles.compareSelectionToggleText}>
                         {compareSelectionCollapsed
                           ? "Exibir seleção das bases"
@@ -3851,13 +3861,48 @@ const styles = StyleSheet.create(
         marginBottom: 18,
         gap: 16,
       },
-      compareSelectionToggle: {
+      compareIntroAfterComparison: {
+        minHeight: 116,
+        padding: 20,
+        paddingBottom: 42,
+        backgroundColor: "#F8F8FF",
         borderWidth: 1,
         borderColor: "#DFDCFF",
-        backgroundColor: "#F4F3FF",
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 9,
+        borderRadius: 14,
+        alignItems: "flex-start",
+      },
+      compareSelectionToggle: {
+        position: "absolute",
+        alignSelf: "center",
+        bottom: -18,
+        borderWidth: 1,
+        borderColor: "#DFDCFF",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 999,
+        paddingHorizontal: 15,
+        paddingVertical: 8,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+        shadowColor: "#6558F5",
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 2,
+      },
+      compareSelectionToggleIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#EEEDFE",
+      },
+      compareSelectionToggleIconText: {
+        color: "#5546CB",
+        fontSize: 17,
+        lineHeight: 18,
+        fontWeight: "800",
       },
       compareSelectionToggleText: {
         color: "#5546CB",
