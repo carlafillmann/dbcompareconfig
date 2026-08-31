@@ -223,6 +223,7 @@ function WebservicesComparison({
   loadWebServices,
   compareWebServices,
   onDescriptionPress,
+  refreshKey,
 }: {
   left: CompareSelection;
   right: CompareSelection;
@@ -234,6 +235,7 @@ function WebservicesComparison({
     secondCode: string,
   ) => Promise<CompareResult[]>;
   onDescriptionPress: (row: CompareResult) => void;
+  refreshKey: number;
 }) {
   const [firstServices, setFirstServices] = useState<WebServiceOption[]>([]);
   const [secondServices, setSecondServices] = useState<WebServiceOption[]>([]);
@@ -282,6 +284,7 @@ function WebservicesComparison({
     left.password,
     right.username,
     right.password,
+    refreshKey,
   ]);
   useEffect(() => {
     if (!firstCode || !secondCode) return;
@@ -389,6 +392,7 @@ function FeaturesComparison({
   secondName,
   compareFeatures,
   onDescriptionPress,
+  refreshKey,
 }: {
   left: CompareSelection;
   right: CompareSelection;
@@ -396,6 +400,7 @@ function FeaturesComparison({
   secondName: string;
   compareFeatures: () => Promise<CompareResult[]>;
   onDescriptionPress: (row: CompareResult) => void;
+  refreshKey: number;
 }) {
   const [rows, setRows] = useState<CompareResult[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -432,6 +437,7 @@ function FeaturesComparison({
     left.password,
     right.username,
     right.password,
+    refreshKey,
   ]);
   return (
     <View>
@@ -486,6 +492,7 @@ function CompareOutput(
       secondCode: string,
     ) => Promise<CompareResult[]>;
     compareFeatures: () => Promise<CompareResult[]>;
+    comparisonVersion: number;
   },
 ) {
   const [tab, setTab] = useState<"system" | "webservices" | "features">(
@@ -543,9 +550,10 @@ function CompareOutput(
           </Text>
         </Pressable>
       </View>
-      {tab === "system" ? (
+      <View style={tab === "system" ? undefined : styles.hiddenTab}>
         <CompareResults {...props} />
-      ) : tab === "webservices" ? (
+      </View>
+      <View style={tab === "webservices" ? undefined : styles.hiddenTab}>
         <WebservicesComparison
           left={props.left}
           right={props.right}
@@ -554,8 +562,10 @@ function CompareOutput(
           loadWebServices={props.loadWebServices}
           compareWebServices={props.compareWebServices}
           onDescriptionPress={props.onExplanationPress}
+          refreshKey={props.comparisonVersion}
         />
-      ) : tab === "features" ? (
+      </View>
+      <View style={tab === "features" ? undefined : styles.hiddenTab}>
         <FeaturesComparison
           left={props.left}
           right={props.right}
@@ -563,10 +573,9 @@ function CompareOutput(
           secondName={props.secondName}
           compareFeatures={props.compareFeatures}
           onDescriptionPress={props.onExplanationPress}
+          refreshKey={props.comparisonVersion}
         />
-      ) : (
-        <ConstructionPanel title={"Features"} />
-      )}
+      </View>
     </View>
   );
 }
@@ -2040,6 +2049,7 @@ export default function App() {
     password: "",
   });
   const [compareRows, setCompareRows] = useState<CompareResult[] | null>(null);
+  const [comparisonVersion, setComparisonVersion] = useState(0);
   const [comparing, setComparing] = useState(false);
   const [descriptionDetail, setDescriptionDetail] =
     useState<CompareResult | null>(null);
@@ -2528,6 +2538,7 @@ export default function App() {
             !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
         ),
       );
+      setComparisonVersion((version) => version + 1);
     } catch (error) {
       setCompareRows(null);
       setNotice({
@@ -2984,6 +2995,7 @@ export default function App() {
                         loadWebServices={loadWebServices}
                         compareWebServices={compareWebServices}
                         compareFeatures={compareFeatures}
+                        comparisonVersion={comparisonVersion}
                         parameterGroups={parameterGroups}
                         selectedParameterGroupId={selectedParameterGroupId}
                         onParameterGroupChange={setSelectedParameterGroupId}
@@ -4275,8 +4287,10 @@ const styles = StyleSheet.create(
         alignSelf: "stretch",
         alignItems: "center",
         gap: 8,
+        transform: [{ translateX: -5 }],
       },
-      resultsCountIcon: { width: 27, height: 27 },
+      resultsCountIcon: { width: 31, height: 31 },
+      hiddenTab: { display: "none" },
       parameterGroupFilter: {
         flexDirection: "row",
         alignItems: "center",
