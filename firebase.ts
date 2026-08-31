@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   updateDoc,
@@ -57,6 +58,7 @@ export type FirestoreConnection = {
 // Perfil do usuário. `themePreference` é um campo interno: é persistido no
 // Firestore, mas não é exibido no formulário de cadastro de usuários.
 export type UserThemePreference = "light" | "dark";
+export type ApiVersionSettings = { latestVersion: string };
 export type FirestoreUserProfile = {
   id: string;
   username: string;
@@ -189,4 +191,12 @@ export async function updateUser(user: FirestoreUserProfile) {
     ...data,
     ...(email ? { email } : { email: "" }),
   });
+}
+
+export async function getApiVersionSettings(): Promise<ApiVersionSettings> {
+  const result = await getDoc(doc(firestore, "settings", "api"));
+  const latestVersion = result.data()?.latestVersion;
+  return {
+    latestVersion: typeof latestVersion === "string" ? latestVersion : "",
+  };
 }

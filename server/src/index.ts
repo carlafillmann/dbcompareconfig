@@ -37,6 +37,7 @@ const webServicesQuery =
   "SELECT CDWEBSERVICES, DEWEBSERVICES, SGTIPOINTEGRACAO FROM ESPJWS";
 const webServiceParametersQuery =
   "SELECT CDWEBSERVICES, DEPARAMETRO, DEDESCRICAO, VLPARAMETRO FROM ESPJWSPARAMETROS WHERE CDWEBSERVICES = ";
+const apiVersion = "1.0.3";
 
 const app = express();
 const allowedOrigins = (
@@ -402,7 +403,9 @@ function compareParameters(first: ParameterRow[], second: ParameterRow[]) {
     });
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) =>
+  res.json({ ok: true, version: apiVersion }),
+);
 app.post("/api/connections/test", async (req, res, next) => {
   try {
     const data = validate(req.body);

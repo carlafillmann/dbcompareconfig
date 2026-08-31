@@ -20,6 +20,7 @@ import {
   deleteConnection,
   FirestoreConnection,
   FirestoreUserProfile,
+  getApiVersionSettings,
   listConnections,
   listUsers,
   updateConnection,
@@ -83,7 +84,7 @@ const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   "http://127.0.0.1:3333";
 const connectorDownloadUrl =
-  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.2/DBCompare.Connector.Setup.1.0.2.exe";
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.3/DBCompare.Connector.Setup.1.0.3.exe";
 const environments: EnvironmentType[] = [
   "Produção",
   "Homologação",
@@ -1708,6 +1709,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [firestoreOnline, setFirestoreOnline] = useState<boolean | null>(null);
   const [connectorOnline, setConnectorOnline] = useState<boolean | null>(null);
+  const [connectorOutdated, setConnectorOutdated] = useState(false);
+  const [latestApiVersion, setLatestApiVersion] = useState("");
   const firestorePulse = useRef(new Animated.Value(1)).current;
   const connectorPulse = useRef(new Animated.Value(1)).current;
   const [saving, setSaving] = useState(false);
@@ -1836,6 +1839,11 @@ export default function App() {
     loadConnections();
   }, []);
   useEffect(() => {
+    void getApiVersionSettings()
+      .then((settings) => setLatestApiVersion(settings.latestVersion))
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
     if (currentUser?.role === "Administrador") void loadUsers();
   }, [currentUser?.role]);
   useEffect(() => {
@@ -1902,14 +1910,21 @@ export default function App() {
       try {
         const response = await fetch(`${apiUrl}/api/health`);
         setConnectorOnline(response.ok);
+        const body = await response.json().catch(() => ({}));
+        setConnectorOutdated(
+          response.ok &&
+            Boolean(latestApiVersion) &&
+            body.version !== latestApiVersion,
+        );
       } catch {
         setConnectorOnline(false);
+        setConnectorOutdated(false);
       }
     };
     void checkConnector();
     const interval = setInterval(checkConnector, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [latestApiVersion]);
   useEffect(() => {
     if (firestoreOnline !== false) {
       firestorePulse.stopAnimation();
@@ -1934,7 +1949,7 @@ export default function App() {
     return () => animation.stop();
   }, [firestoreOnline, firestorePulse]);
   useEffect(() => {
-    if (connectorOnline !== false) {
+    if (connectorOnline !== false && !connectorOutdated) {
       connectorPulse.stopAnimation();
       connectorPulse.setValue(1);
       return;
@@ -1955,7 +1970,7 @@ export default function App() {
     );
     animation.start();
     return () => animation.stop();
-  }, [connectorOnline, connectorPulse]);
+  }, [connectorOnline, connectorOutdated, connectorPulse]);
   const update = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
   const validate = (passwordRequired = true) => {
@@ -2363,28 +2378,34 @@ export default function App() {
                 <Animated.View
                   style={[
                     styles.sideStatus,
-                    connectorOnline === false && { opacity: connectorPulse },
+                    (connectorOnline === false || connectorOutdated) && {
+                      opacity: connectorPulse,
+                    },
                   ]}
                 >
                   <View
                     style={[
                       styles.dot,
-                      connectorOnline === false && styles.dotOffline,
+                      (connectorOnline === false || connectorOutdated) &&
+                        styles.dotOffline,
                       connectorOnline === null && styles.dotWaiting,
                     ]}
                   />
                   <Text
                     style={[
                       styles.statusText,
-                      connectorOnline === false && styles.statusTextOffline,
+                      (connectorOnline === false || connectorOutdated) &&
+                        styles.statusTextOffline,
                       connectorOnline === null && styles.statusTextWaiting,
                     ]}
                   >
                     {connectorOnline === false
                       ? "DBCompare Connector indisponível"
-                      : connectorOnline
-                        ? "DBCompare Connector conectado"
-                        : "Verificando DBCompare Connector"}
+                      : connectorOutdated
+                        ? `DBCompare Connector desatualizado${latestApiVersion ? ` (v${latestApiVersion})` : ""}`
+                        : connectorOnline
+                          ? "DBCompare Connector conectado"
+                          : "Verificando DBCompare Connector"}
                   </Text>
                 </Animated.View>
                 <Pressable

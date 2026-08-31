@@ -10,5 +10,10 @@ service cloud.firestore {
       match /users/{userId} {
         allow read, write: if true;
       }
+      // Versão publicada do Connector, consultada pela aplicação para avisar
+      // quando a API local instalada estiver desatualizada.
+      match /settings/{settingId} {
+        allow read, write: if true;
+      }
   }
 }
