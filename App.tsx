@@ -1,97 +1,1506 @@
-import { Picker } from '@react-native-picker/picker';
-import { StatusBar } from 'expo-status-bar';
-import { createElement, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { createConnection, createUser, deleteConnection, FirestoreConnection, FirestoreUserProfile, listConnections, listUsers, updateConnection, updateUser, updateUserTheme, UserThemePreference } from './firebase';
+import { Picker } from "@react-native-picker/picker";
+import { StatusBar } from "expo-status-bar";
+import { createElement, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  createConnection,
+  createUser,
+  deleteConnection,
+  FirestoreConnection,
+  FirestoreUserProfile,
+  getSettings,
+  listConnections,
+  listUsers,
+  updateConnection,
+  updateSettings,
+  updateUser,
+  updateUserTheme,
+  UserThemePreference,
+} from "./firebase";
 
-type DatabaseType = 'oracle' | 'sqlserver' | 'postgresql';
-type EnvironmentType = 'Produção' | 'Homologação' | 'Teste' | 'Espelho' | 'Nimitz' | 'Interna' | 'Desenvolvimento';
+type DatabaseType = "oracle" | "sqlserver" | "postgresql";
+type EnvironmentType =
+  | "Produção"
+  | "Homologação"
+  | "Teste"
+  | "Espelho"
+  | "Nimitz"
+  | "Interna"
+  | "Desenvolvimento";
 type Connection = FirestoreConnection;
-type FormData = Omit<Connection, 'id'> & { password: string };
-type Notice = { type: 'success' | 'error'; title: string; message: string } | null;
-type CompareSelection = { connectionId: string; username: string; password: string };
+type FormData = Omit<Connection, "id"> & { password: string };
+type Notice = {
+  type: "success" | "error";
+  title: string;
+  message: string;
+} | null;
+type CompareSelection = {
+  connectionId: string;
+  username: string;
+  password: string;
+};
 type Theme = UserThemePreference;
-type UserForm = { username: string; name: string; password: string; role: 'Comum' | 'Administrador'; email: string; active: boolean };
-type CompareResult = { cdParametro: string; deParametro: string; deParametroFirst: string | null; deParametroSecond: string | null; descriptionDifferent: boolean; firstExplanation: string | null; secondExplanation: string | null; firstValue: string | null; secondValue: string | null; valuesDifferent: boolean; foundInFirst: boolean; foundInSecond: boolean };
-
-const apiUrl = process.env.EXPO_PUBLIC_DATABASE_API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:3333';
-const connectorDownloadUrl = 'https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.0/DBCompare.Connector.Setup.1.0.0.exe';
-const environments: EnvironmentType[] = ['Produção', 'Homologação', 'Teste', 'Espelho', 'Nimitz', 'Interna', 'Desenvolvimento'];
-const environmentsWithDefaultPassword: EnvironmentType[] = ['Espelho', 'Nimitz', 'Interna', 'Desenvolvimento'];
-const databaseTypes: DatabaseType[] = ['postgresql', 'oracle', 'sqlserver'];
-const defaultPort: Record<DatabaseType, number> = { oracle: 1521, sqlserver: 1433, postgresql: 5432 };
-const emptyForm: FormData = { name: '', environmentType: 'Produção', databaseType: 'postgresql', host: '', port: 5432, database: '', username: '', password: '' };
-const emptyUserForm: UserForm = { username: '', name: '', password: 'trocar123', role: 'Comum', email: '', active: true };
-const errorText = (error: unknown) => error instanceof Error ? error.message : 'Erro desconhecido.';
-const databaseLabel = (type: DatabaseType) => ({ oracle: 'Oracle', sqlserver: 'SQL Server', postgresql: 'PostgreSQL' })[type];
-const initials = (type: DatabaseType) => ({ oracle: 'OR', sqlserver: 'MS', postgresql: 'PG' })[type];
-const databaseColor = (type: DatabaseType) => ({ oracle: '#FDE8E7', sqlserver: '#E4EEFF', postgresql: '#E6F5F0' })[type];
-const hashPassword = async (password: string) => {
-  const bytes = new TextEncoder().encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(hash)).map(value => value.toString(16).padStart(2, '0')).join('');
+type UserForm = {
+  username: string;
+  name: string;
+  password: string;
+  role: "Comum" | "Administrador";
+  email: string;
+  active: boolean;
+};
+type CompareResult = {
+  cdParametro: string;
+  deParametro: string;
+  deParametroFirst: string | null;
+  deParametroSecond: string | null;
+  descriptionDifferent: boolean;
+  firstExplanation: string | null;
+  secondExplanation: string | null;
+  firstValue: string | null;
+  secondValue: string | null;
+  valuesDifferent: boolean;
+  foundInFirst: boolean;
+  foundInSecond: boolean;
 };
 
-function Field({ label, children, compact = false }: { label: string; children: React.ReactNode; compact?: boolean }) { return <View style={[styles.field, compact && styles.compactField]}><Text style={styles.label}>{label}</Text>{children}</View>; }
-function NoticeBox({ notice }: { notice: Exclude<Notice, null> }) { return <View style={[styles.notice, notice.type === 'success' ? styles.noticeSuccess : styles.noticeError]}><Text style={styles.noticeTitle}>{notice.title}</Text><Text style={styles.noticeText}>{notice.message}</Text></View>; }
-function Tab({ text, active, onPress }: { text: string; active: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.tab, styles.sideTab, active && styles.sideTabActive]}><Text style={[styles.tabText, active && styles.tabTextActive]}>{text}</Text></Pressable>; }
-function ConstructionPanel({ title }: { title: string }) { return <View style={styles.constructionPanel}><Image source={require('./assets/under-construction.png')} style={styles.constructionImage} resizeMode="contain" /><Text style={styles.constructionTitle}>{title}</Text><Text style={styles.constructionText}>Em construção</Text></View>; }
-function CompareOutput(props: React.ComponentProps<typeof CompareResults>) { const [tab, setTab] = useState<'system' | 'webservices' | 'features'>('system'); return <View><View style={styles.compareSubtabs}><Pressable style={[styles.compareSubtab, tab === 'system' && styles.compareSubtabActive]} onPress={() => setTab('system')}><Text style={[styles.compareSubtabText, tab === 'system' && styles.compareSubtabTextActive]}>Parâmetros do sistema</Text></Pressable><Pressable style={[styles.compareSubtab, tab === 'webservices' && styles.compareSubtabActive]} onPress={() => setTab('webservices')}><Text style={[styles.compareSubtabText, tab === 'webservices' && styles.compareSubtabTextActive]}>Parâmetros de Webservices</Text></Pressable><Pressable style={[styles.compareSubtab, tab === 'features' && styles.compareSubtabActive]} onPress={() => setTab('features')}><Text style={[styles.compareSubtabText, tab === 'features' && styles.compareSubtabTextActive]}>Features</Text></Pressable></View>{tab === 'system' ? <CompareResults {...props} /> : <ConstructionPanel title={tab === 'webservices' ? 'Parâmetros de Webservices' : 'Features'} />}</View>; }
-function CompareCard({ title, subtitle, selection, connections, onSelect, onChange }: { title: string; subtitle: string; selection: CompareSelection; connections: Connection[]; onSelect: (id: string) => void; onChange: (selection: CompareSelection) => void }) {
-  return <View style={[styles.compareCard, styles.compactCompareCard]}><Text style={styles.compareCardTitle}>{title}</Text><Text style={[styles.compareCardSubtitle, styles.compactCompareCardSubtitle]}>{subtitle}</Text><Field label="Conexão cadastrada" compact><View style={[styles.pickerBox, styles.connectionPickerBox]}><Picker style={styles.connectionPicker} selectedValue={selection.connectionId} onValueChange={onSelect}><Picker.Item label="Selecione uma conexão" value="" />{connections.map(connection => <Picker.Item key={connection.id} label={`${connection.name} · ${databaseLabel(connection.databaseType)}`} value={connection.id} />)}</Picker></View></Field><Field label="Usuário" compact><TextInput style={styles.input} value={selection.username} onChangeText={username => onChange({ ...selection, username })} autoCapitalize="none" placeholder="Selecionado automaticamente" placeholderTextColor="#98A2B3" /></Field><Field label="Senha" compact><TextInput style={styles.input} value={selection.password} onChangeText={password => onChange({ ...selection, password })} secureTextEntry autoCapitalize="none" placeholder="Senha da base" placeholderTextColor="#98A2B3" /></Field></View>;
-}
-function CompareResults({ rows, firstName, secondName, onlyDifferent, onOnlyDifferentChange, filters, onFilterChange, showFilters, onToggleFilters, onDescriptionPress, onExplanationPress }: { rows: CompareResult[]; firstName: string; secondName: string; onlyDifferent: boolean; onOnlyDifferentChange: (value: boolean) => void; filters: Record<string, string>; onFilterChange: (column: string, value: string) => void; showFilters: boolean; onToggleFilters: () => void; onDescriptionPress: (row: CompareResult) => void; onExplanationPress: (row: CompareResult) => void }) {
-  const isDifferent = (row: CompareResult) => row.valuesDifferent || !row.foundInFirst || !row.foundInSecond;
-  const status = (row: CompareResult) => isDifferent(row) ? 'Diferente' : 'Igual';
-  const displayed = rows.filter(row => (!onlyDifferent || isDifferent(row)) && [row.cdParametro, row.deParametro, row.firstExplanation ?? '', row.firstValue ?? '', row.secondValue ?? '', status(row)].every((value, index) => value.toLocaleLowerCase().includes((filters[['code', 'description', 'explanation', 'first', 'second', 'status'][index]] || '').toLocaleLowerCase())));
-  const exportCsv = () => { if (Platform.OS !== 'web') return; const escape = (value: string | null) => `"${(value ?? '').replace(/"/g, '""')}"`; const content = [[ 'CDPARAMETRO', 'DEPARAMETRO', 'DEEXPLICACAO', firstName, secondName, 'STATUS' ], ...displayed.map(row => [row.cdParametro, row.deParametro, row.firstExplanation, row.firstValue, row.secondValue, status(row)])].map(line => line.map(escape).join(';')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' })); link.download = 'comparacao-de-parametros.csv'; link.click(); URL.revokeObjectURL(link.href); };
-  return <View style={styles.resultsCard}><View style={styles.resultsHeading}><View><Text style={styles.sectionTitle}>Resultado da comparação</Text><Text style={styles.sectionSubtitle}>{rows.filter(isDifferent).length} parâmetros com diferença</Text></View><View style={styles.resultControls}><Pressable onPress={exportCsv} style={styles.excelButton} accessibilityLabel="Exportar resultado para Excel"><Text style={styles.excelText}>XLS</Text></Pressable><Pressable onPress={() => onOnlyDifferentChange(!onlyDifferent)} style={styles.checkboxLine}><View style={[styles.checkbox, onlyDifferent && styles.checkboxChecked]}>{onlyDifferent && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.checkboxText}>Exibir apenas parâmetros com valores distintos</Text></Pressable></View></View><ScrollView horizontal><View style={styles.resultsTable}><View style={[styles.resultRow, styles.resultHead]}><Text style={[styles.tableHeadText, styles.codeResult]}>CÓDIGO</Text><Text style={[styles.tableHeadText, styles.descriptionResult]}>DESCRIÇÃO</Text><Text style={[styles.tableHeadText, styles.explanationResult]}>EXPLICAÇÃO</Text><Text style={[styles.tableHeadText, styles.valueResult]}>{firstName.toUpperCase()}</Text><Text style={[styles.tableHeadText, styles.valueResult]}>{secondName.toUpperCase()}</Text><View style={[styles.statusResult, styles.statusHeader]}><Text style={styles.tableHeadText}>STATUS</Text><Pressable onPress={onToggleFilters} style={styles.filterButton} accessibilityLabel="Exibir filtros"><Text style={styles.filterIcon}>⌕</Text></Pressable></View></View>{showFilters && <View style={[styles.resultRow, styles.filterRow]}><TextInput style={[styles.filterInput, styles.codeResult]} value={filters.code} onChangeText={value => onFilterChange('code', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /><TextInput style={[styles.filterInput, styles.descriptionResult]} value={filters.description} onChangeText={value => onFilterChange('description', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /><TextInput style={[styles.filterInput, styles.explanationResult]} value={filters.explanation} onChangeText={value => onFilterChange('explanation', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /><TextInput style={[styles.filterInput, styles.valueResult]} value={filters.first} onChangeText={value => onFilterChange('first', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /><TextInput style={[styles.filterInput, styles.valueResult]} value={filters.second} onChangeText={value => onFilterChange('second', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /><TextInput style={[styles.filterInput, styles.statusResult]} value={filters.status} onChangeText={value => onFilterChange('status', value)} placeholder="Filtrar" placeholderTextColor="#98A2B3" /></View>}{displayed.map(row => <View key={row.cdParametro} style={styles.resultRow}><Text style={[styles.cellText, styles.codeResult]}>{row.cdParametro}</Text><View style={styles.descriptionResult}><View style={styles.descriptionLine}><Text style={styles.cellText}>{row.deParametro}</Text>{row.descriptionDifferent && <Pressable accessibilityLabel="Ver diferença na descrição" onPress={() => onDescriptionPress(row)} style={styles.warning}><Text style={styles.warningText}>!</Text></Pressable>}</View></View><View style={styles.explanationResult}><Pressable style={styles.ellipsisButton} onPress={() => onExplanationPress(row)} accessibilityLabel="Ver explicação"><Text style={styles.ellipsisText}>•••</Text></Pressable></View><Text style={[styles.cellText, styles.valueResult]}>{row.firstValue ?? '—'}</Text><Text style={[styles.cellText, styles.valueResult]}>{row.secondValue ?? '—'}</Text><View style={styles.statusResult}><View style={[styles.resultTag, isDifferent(row) ? styles.resultTagDifferent : styles.resultTagEqual]}><Text style={[styles.resultTagText, isDifferent(row) ? styles.resultTagTextDifferent : styles.resultTagTextEqual]}>{status(row)}</Text></View></View></View>)}{displayed.length === 0 && <View style={styles.noResults}><Text style={styles.muted}>Nenhum parâmetro encontrado com os filtros atuais.</Text></View>}</View></ScrollView></View>; }
+const apiUrl =
+  process.env.EXPO_PUBLIC_DATABASE_API_URL ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  "http://127.0.0.1:3333";
+const connectorDownloadUrl =
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.1/DBCompare.Connector.Setup.1.0.1.exe";
+const environments: EnvironmentType[] = [
+  "Produção",
+  "Homologação",
+  "Teste",
+  "Espelho",
+  "Nimitz",
+  "Interna",
+  "Desenvolvimento",
+];
+const environmentsWithDefaultPassword: EnvironmentType[] = [
+  "Espelho",
+  "Nimitz",
+  "Interna",
+  "Desenvolvimento",
+];
+const databaseTypes: DatabaseType[] = ["postgresql", "oracle", "sqlserver"];
+const defaultPort: Record<DatabaseType, number> = {
+  oracle: 1521,
+  sqlserver: 1433,
+  postgresql: 5432,
+};
+const emptyForm: FormData = {
+  name: "",
+  environmentType: "Produção",
+  databaseType: "postgresql",
+  host: "",
+  port: 5432,
+  database: "",
+  username: "",
+  password: "",
+};
+const emptyUserForm: UserForm = {
+  username: "",
+  name: "",
+  password: "trocar123",
+  role: "Comum",
+  email: "",
+  active: true,
+};
+const errorText = (error: unknown) =>
+  error instanceof Error ? error.message : "Erro desconhecido.";
+const databaseLabel = (type: DatabaseType) =>
+  ({ oracle: "Oracle", sqlserver: "SQL Server", postgresql: "PostgreSQL" })[
+    type
+  ];
+const initials = (type: DatabaseType) =>
+  ({ oracle: "OR", sqlserver: "MS", postgresql: "PG" })[type];
+const databaseColor = (type: DatabaseType) =>
+  ({ oracle: "#FDE8E7", sqlserver: "#E4EEFF", postgresql: "#E6F5F0" })[type];
+const hashPassword = async (password: string) => {
+  const bytes = new TextEncoder().encode(password);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+};
 
-function LoginScreen({ onLogin }: { onLogin: (username: string, password: string) => Promise<void> }) {
-  const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
-  const submit = async () => { try { setLoading(true); setError(''); await onLogin(username, password); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } };
-  if (Platform.OS === 'web') return <View style={styles.loginPage}><View style={styles.loginCard}><Image source={require('./assets/dbcompare-logo.png')} style={styles.loginLogo} resizeMode="contain" /><Text style={styles.loginTitle}>DBCompare</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}{createElement('form', { autoComplete: 'on', onSubmit: (event: any) => { event.preventDefault(); void submit(); }, style: { display: 'flex', flexDirection: 'column', gap: 12 } }, createElement('label', { style: { color: '#344054', fontSize: 13, fontWeight: 700 } }, 'Usuário', createElement('input', { name: 'username', type: 'text', autoComplete: 'username', value: username, onChange: (event: any) => setUsername(event.target.value), style: { display: 'block', boxSizing: 'border-box', width: '100%', height: 40, marginTop: 7, border: '1px solid #D0D5DD', borderRadius: 8, padding: '0 12px', fontSize: 14 } })), createElement('label', { style: { color: '#344054', fontSize: 13, fontWeight: 700 } }, 'Senha', createElement('input', { name: 'password', type: 'password', autoComplete: 'current-password', value: password, onChange: (event: any) => setPassword(event.target.value), style: { display: 'block', boxSizing: 'border-box', width: '100%', height: 40, marginTop: 7, border: '1px solid #D0D5DD', borderRadius: 8, padding: '0 12px', fontSize: 14 } })), createElement('button', { type: 'submit', disabled: loading, style: { height: 46, border: 0, borderRadius: 10, background: '#6558F5', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 4 } }, loading ? 'Entrando…' : 'Entrar'))}</View></View>;
-  return <View style={styles.loginPage}><View style={styles.loginCard}><Image source={require('./assets/dbcompare-logo.png')} style={styles.loginLogo} resizeMode="contain" /><Text style={styles.loginTitle}>DBCompare</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}<Field label="Usuário"><TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="characters" autoComplete="username" placeholder="Seu usuário" placeholderTextColor="#98A2B3" /></Field><Field label="Senha"><TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" placeholder="Sua senha" placeholderTextColor="#98A2B3" onSubmitEditing={submit} /></Field><Pressable style={[styles.primaryButton, loading && styles.disabled]} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Entrar</Text>}</Pressable></View></View>;
+function Field({
+  label,
+  children,
+  compact = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <View style={[styles.field, compact && styles.compactField]}>
+      <Text style={styles.label}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+function NoticeBox({ notice }: { notice: Exclude<Notice, null> }) {
+  return (
+    <View
+      style={[
+        styles.notice,
+        notice.type === "success" ? styles.noticeSuccess : styles.noticeError,
+      ]}
+    >
+      <Text style={styles.noticeTitle}>{notice.title}</Text>
+      <Text style={styles.noticeText}>{notice.message}</Text>
+    </View>
+  );
+}
+function Tab({
+  text,
+  icon,
+  active,
+  onPress,
+}: {
+  text: string;
+  icon: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.tab, styles.sideTab, active && styles.sideTabActive]}
+    >
+      <View style={[styles.tabIcon, active && styles.tabIconActive]}>
+        <Text style={[styles.tabIconText, active && styles.tabIconTextActive]}>
+          {icon}
+        </Text>
+      </View>
+      <Text style={[styles.tabText, active && styles.tabTextActive]}>
+        {text}
+      </Text>
+    </Pressable>
+  );
+}
+function ConstructionPanel({ title }: { title: string }) {
+  return (
+    <View style={styles.constructionPanel}>
+      <Image
+        source={require("./assets/under-construction.png")}
+        style={styles.constructionImage}
+        resizeMode="contain"
+      />
+      <Text style={styles.constructionTitle}>{title}</Text>
+      <Text style={styles.constructionText}>Em construção</Text>
+    </View>
+  );
+}
+function CompareOutput(props: React.ComponentProps<typeof CompareResults>) {
+  const [tab, setTab] = useState<"system" | "webservices" | "features">(
+    "system",
+  );
+  return (
+    <View>
+      <View style={styles.compareSubtabs}>
+        <Pressable
+          style={[
+            styles.compareSubtab,
+            tab === "system" && styles.compareSubtabActive,
+          ]}
+          onPress={() => setTab("system")}
+        >
+          <Text
+            style={[
+              styles.compareSubtabText,
+              tab === "system" && styles.compareSubtabTextActive,
+            ]}
+          >
+            Parâmetros do sistema
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.compareSubtab,
+            tab === "webservices" && styles.compareSubtabActive,
+          ]}
+          onPress={() => setTab("webservices")}
+        >
+          <Text
+            style={[
+              styles.compareSubtabText,
+              tab === "webservices" && styles.compareSubtabTextActive,
+            ]}
+          >
+            Parâmetros de Webservices
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.compareSubtab,
+            tab === "features" && styles.compareSubtabActive,
+          ]}
+          onPress={() => setTab("features")}
+        >
+          <Text
+            style={[
+              styles.compareSubtabText,
+              tab === "features" && styles.compareSubtabTextActive,
+            ]}
+          >
+            Features
+          </Text>
+        </Pressable>
+      </View>
+      {tab === "system" ? (
+        <CompareResults {...props} />
+      ) : (
+        <ConstructionPanel
+          title={
+            tab === "webservices" ? "Parâmetros de Webservices" : "Features"
+          }
+        />
+      )}
+    </View>
+  );
+}
+function CompareCard({
+  title,
+  subtitle,
+  selection,
+  connections,
+  onSelect,
+  onChange,
+}: {
+  title: string;
+  subtitle: string;
+  selection: CompareSelection;
+  connections: Connection[];
+  onSelect: (id: string) => void;
+  onChange: (selection: CompareSelection) => void;
+}) {
+  return (
+    <View style={[styles.compareCard, styles.compactCompareCard]}>
+      <Text style={styles.compareCardTitle}>{title}</Text>
+      <Text
+        style={[styles.compareCardSubtitle, styles.compactCompareCardSubtitle]}
+      >
+        {subtitle}
+      </Text>
+      <Field label="Conexão cadastrada" compact>
+        <View style={[styles.pickerBox, styles.connectionPickerBox]}>
+          <Picker
+            style={styles.connectionPicker}
+            selectedValue={selection.connectionId}
+            onValueChange={onSelect}
+          >
+            <Picker.Item label="Selecione uma conexão" value="" />
+            {connections.map((connection) => (
+              <Picker.Item
+                key={connection.id}
+                label={`${connection.name} · ${databaseLabel(connection.databaseType)}`}
+                value={connection.id}
+              />
+            ))}
+          </Picker>
+        </View>
+      </Field>
+      <Field label="Usuário" compact>
+        <TextInput
+          style={styles.input}
+          value={selection.username}
+          onChangeText={(username) => onChange({ ...selection, username })}
+          autoCapitalize="none"
+          placeholder="Selecionado automaticamente"
+          placeholderTextColor="#98A2B3"
+        />
+      </Field>
+      <Field label="Senha" compact>
+        <TextInput
+          style={styles.input}
+          value={selection.password}
+          onChangeText={(password) => onChange({ ...selection, password })}
+          secureTextEntry
+          autoCapitalize="none"
+          placeholder="Senha da base"
+          placeholderTextColor="#98A2B3"
+        />
+      </Field>
+    </View>
+  );
+}
+function CompareResults({
+  rows,
+  firstName,
+  secondName,
+  onlyDifferent,
+  onOnlyDifferentChange,
+  filters,
+  onFilterChange,
+  showFilters,
+  onToggleFilters,
+  onDescriptionPress,
+  onExplanationPress,
+}: {
+  rows: CompareResult[];
+  firstName: string;
+  secondName: string;
+  onlyDifferent: boolean;
+  onOnlyDifferentChange: (value: boolean) => void;
+  filters: Record<string, string>;
+  onFilterChange: (column: string, value: string) => void;
+  showFilters: boolean;
+  onToggleFilters: () => void;
+  onDescriptionPress: (row: CompareResult) => void;
+  onExplanationPress: (row: CompareResult) => void;
+}) {
+  const isDifferent = (row: CompareResult) =>
+    row.valuesDifferent || !row.foundInFirst || !row.foundInSecond;
+  const status = (row: CompareResult) =>
+    isDifferent(row) ? "Diferente" : "Igual";
+  const displayed = rows.filter(
+    (row) =>
+      (!onlyDifferent || isDifferent(row)) &&
+      [
+        row.cdParametro,
+        row.deParametro,
+        row.firstExplanation ?? "",
+        row.firstValue ?? "",
+        row.secondValue ?? "",
+        status(row),
+      ].every((value, index) =>
+        value
+          .toLocaleLowerCase()
+          .includes(
+            (
+              filters[
+                [
+                  "code",
+                  "description",
+                  "explanation",
+                  "first",
+                  "second",
+                  "status",
+                ][index]
+              ] || ""
+            ).toLocaleLowerCase(),
+          ),
+      ),
+  );
+  const exportCsv = () => {
+    if (Platform.OS !== "web") return;
+    const escape = (value: string | null) =>
+      `"${(value ?? "").replace(/"/g, '""')}"`;
+    const content = [
+      [
+        "CDPARAMETRO",
+        "DEPARAMETRO",
+        "DEEXPLICACAO",
+        firstName,
+        secondName,
+        "STATUS",
+      ],
+      ...displayed.map((row) => [
+        row.cdParametro,
+        row.deParametro,
+        row.firstExplanation,
+        row.firstValue,
+        row.secondValue,
+        status(row),
+      ]),
+    ]
+      .map((line) => line.map(escape).join(";"))
+      .join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(
+      new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8;" }),
+    );
+    link.download = "comparacao-de-parametros.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+  return (
+    <View style={styles.resultsCard}>
+      <View style={styles.resultsHeading}>
+        <View>
+          <Text style={styles.sectionTitle}>Resultado da comparação</Text>
+          <Text style={styles.sectionSubtitle}>
+            {rows.filter(isDifferent).length} parâmetros com diferença
+          </Text>
+        </View>
+        <View style={styles.resultControls}>
+          <Pressable
+            onPress={exportCsv}
+            style={styles.excelButton}
+            accessibilityLabel="Exportar resultado para Excel"
+          >
+            <Text style={styles.excelText}>XLS</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onOnlyDifferentChange(!onlyDifferent)}
+            style={styles.checkboxLine}
+          >
+            <View
+              style={[styles.checkbox, onlyDifferent && styles.checkboxChecked]}
+            >
+              {onlyDifferent && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.checkboxText}>
+              Exibir apenas parâmetros com valores distintos
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+      <ScrollView horizontal>
+        <View style={styles.resultsTable}>
+          <View style={[styles.resultRow, styles.resultHead]}>
+            <Text style={[styles.tableHeadText, styles.codeResult]}>
+              CÓDIGO
+            </Text>
+            <Text style={[styles.tableHeadText, styles.descriptionResult]}>
+              DESCRIÇÃO
+            </Text>
+            <Text style={[styles.tableHeadText, styles.explanationResult]}>
+              EXPLICAÇÃO
+            </Text>
+            <Text style={[styles.tableHeadText, styles.valueResult]}>
+              {firstName.toUpperCase()}
+            </Text>
+            <Text style={[styles.tableHeadText, styles.valueResult]}>
+              {secondName.toUpperCase()}
+            </Text>
+            <View style={[styles.statusResult, styles.statusHeader]}>
+              <Text style={styles.tableHeadText}>STATUS</Text>
+              <Pressable
+                onPress={onToggleFilters}
+                style={styles.filterButton}
+                accessibilityLabel="Exibir filtros"
+              >
+                <Text style={styles.filterIcon}>⌕</Text>
+              </Pressable>
+            </View>
+          </View>
+          {showFilters && (
+            <View style={[styles.resultRow, styles.filterRow]}>
+              <TextInput
+                style={[styles.filterInput, styles.codeResult]}
+                value={filters.code}
+                onChangeText={(value) => onFilterChange("code", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+              <TextInput
+                style={[styles.filterInput, styles.descriptionResult]}
+                value={filters.description}
+                onChangeText={(value) => onFilterChange("description", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+              <TextInput
+                style={[styles.filterInput, styles.explanationResult]}
+                value={filters.explanation}
+                onChangeText={(value) => onFilterChange("explanation", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+              <TextInput
+                style={[styles.filterInput, styles.valueResult]}
+                value={filters.first}
+                onChangeText={(value) => onFilterChange("first", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+              <TextInput
+                style={[styles.filterInput, styles.valueResult]}
+                value={filters.second}
+                onChangeText={(value) => onFilterChange("second", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+              <TextInput
+                style={[styles.filterInput, styles.statusResult]}
+                value={filters.status}
+                onChangeText={(value) => onFilterChange("status", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
+            </View>
+          )}
+          {displayed.map((row) => (
+            <View key={row.cdParametro} style={styles.resultRow}>
+              <Text style={[styles.cellText, styles.codeResult]}>
+                {row.cdParametro}
+              </Text>
+              <View style={styles.descriptionResult}>
+                <View style={styles.descriptionLine}>
+                  <Text style={styles.cellText}>{row.deParametro}</Text>
+                  {row.descriptionDifferent && (
+                    <Pressable
+                      accessibilityLabel="Ver diferença na descrição"
+                      onPress={() => onDescriptionPress(row)}
+                      style={styles.warning}
+                    >
+                      <Text style={styles.warningText}>!</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+              <View style={styles.explanationResult}>
+                <Pressable
+                  style={styles.ellipsisButton}
+                  onPress={() => onExplanationPress(row)}
+                  accessibilityLabel="Ver explicação"
+                >
+                  <Text style={styles.ellipsisText}>•••</Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.cellText, styles.valueResult]}>
+                {row.firstValue ?? "—"}
+              </Text>
+              <Text style={[styles.cellText, styles.valueResult]}>
+                {row.secondValue ?? "—"}
+              </Text>
+              <View style={styles.statusResult}>
+                <View
+                  style={[
+                    styles.resultTag,
+                    isDifferent(row)
+                      ? styles.resultTagDifferent
+                      : styles.resultTagEqual,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.resultTagText,
+                      isDifferent(row)
+                        ? styles.resultTagTextDifferent
+                        : styles.resultTagTextEqual,
+                    ]}
+                  >
+                    {status(row)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))}
+          {displayed.length === 0 && (
+            <View style={styles.noResults}>
+              <Text style={styles.muted}>
+                Nenhum parâmetro encontrado com os filtros atuais.
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
 }
 
-function UsersModal({ visible, users, initialUser = null, canManage, onClose, onSave }: { visible: boolean; users: FirestoreUserProfile[]; initialUser?: FirestoreUserProfile | null; canManage: boolean; onClose: () => void; onSave: (form: UserForm, editing: FirestoreUserProfile | null) => Promise<void> }) {
-  const [form, setForm] = useState<UserForm>(emptyUserForm); const [editing, setEditing] = useState<FirestoreUserProfile | null>(null); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  const openNew = () => { setEditing(null); setForm(emptyUserForm); setError(''); };
-  const openEdit = (user: FirestoreUserProfile) => { setEditing(user); setForm({ username: user.username, name: user.name, password: '', role: user.role, email: user.email || '', active: user.active }); setError(''); };
-  useEffect(() => { if (visible && initialUser) openEdit(initialUser); }, [visible, initialUser?.id]);
-  const save = async () => { try { if (!form.username || !form.name || (!editing && !form.password)) throw new Error('Informe usuário, nome e senha.'); setSaving(true); await onSave(form, editing); openNew(); } catch (reason) { setError(errorText(reason)); } finally { setSaving(false); } };
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.overlay}><ScrollView contentContainerStyle={styles.modalScroll}><View style={[styles.modal, styles.usersModal]}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Usuários</Text><Text style={styles.modalSubtitle}>Cadastre e mantenha os acessos do sistema.</Text></View><Pressable onPress={onClose}><Text style={styles.close}>×</Text></Pressable></View><View style={styles.usersLayout}><View style={styles.usersList}>{canManage && <Pressable style={styles.primaryButton} onPress={openNew}><Text style={styles.primaryText}>+ Novo usuário</Text></Pressable>}<ScrollView>{users.map(user => <Pressable key={user.id} style={[styles.userListItem, editing?.id === user.id && styles.userListItemActive]} onPress={() => openEdit(user)}><View><Text style={styles.connectionName}>{user.name}</Text><Text style={styles.connectionSub}>{user.username} · {user.role}</Text></View><Text style={[styles.userState, !user.active && styles.userStateInactive]}>{user.active ? 'Ativo' : 'Inativo'}</Text></Pressable>)}</ScrollView></View><View style={styles.userForm}><Text style={styles.userFormTitle}>{editing ? 'Editar usuário' : 'Novo usuário'}</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}<Field label="Usuário"><TextInput style={styles.input} value={form.username} editable={!editing} onChangeText={value => setForm(current => ({ ...current, username: value }))} autoCapitalize="characters" /></Field><Field label="Nome"><TextInput style={styles.input} value={form.name} onChangeText={value => setForm(current => ({ ...current, name: value }))} /></Field><Field label={editing ? 'Nova senha (opcional)' : 'Senha'}><TextInput style={styles.input} value={form.password} onChangeText={value => setForm(current => ({ ...current, password: value }))} secureTextEntry /></Field><Field label="Tipo de usuário"><View style={styles.pickerBox}><Picker selectedValue={form.role} onValueChange={(role: UserForm['role']) => setForm(current => ({ ...current, role }))}><Picker.Item label="Comum" value="Comum" /><Picker.Item label="Administrador" value="Administrador" /></Picker></View></Field><Field label="E-mail (opcional)"><TextInput style={styles.input} value={form.email} onChangeText={value => setForm(current => ({ ...current, email: value }))} autoCapitalize="none" keyboardType="email-address" /></Field><Pressable style={styles.activeLine} onPress={() => setForm(current => ({ ...current, active: !current.active }))}><View style={[styles.checkbox, form.active && styles.checkboxChecked]}>{form.active && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.checkboxText}>Usuário ativo</Text></Pressable><Pressable style={[styles.primaryButton, saving && styles.disabled]} onPress={save} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar usuário</Text>}</Pressable></View></View></View></ScrollView></View></Modal>;
+function LoginScreen({
+  onLogin,
+}: {
+  onLogin: (username: string, password: string) => Promise<void>;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      await onLogin(username, password);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+  if (Platform.OS === "web")
+    return (
+      <View style={styles.loginPage}>
+        <View style={styles.loginCard}>
+          <Image
+            source={require("./assets/dbcompare-logo.png")}
+            style={styles.loginLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.loginTitle}>DBCompare</Text>
+          {error ? <Text style={styles.loginError}>{error}</Text> : null}
+          {createElement(
+            "form",
+            {
+              autoComplete: "on",
+              onSubmit: (event: any) => {
+                event.preventDefault();
+                void submit();
+              },
+              style: { display: "flex", flexDirection: "column", gap: 12 },
+            },
+            createElement(
+              "label",
+              { style: { color: "#344054", fontSize: 13, fontWeight: 700 } },
+              "Usuário",
+              createElement("input", {
+                name: "username",
+                type: "text",
+                autoComplete: "username",
+                value: username,
+                onChange: (event: any) => setUsername(event.target.value),
+                style: {
+                  display: "block",
+                  boxSizing: "border-box",
+                  width: "100%",
+                  height: 40,
+                  marginTop: 7,
+                  border: "1px solid #D0D5DD",
+                  borderRadius: 8,
+                  padding: "0 12px",
+                  fontSize: 14,
+                },
+              }),
+            ),
+            createElement(
+              "label",
+              { style: { color: "#344054", fontSize: 13, fontWeight: 700 } },
+              "Senha",
+              createElement("input", {
+                name: "password",
+                type: "password",
+                autoComplete: "current-password",
+                value: password,
+                onChange: (event: any) => setPassword(event.target.value),
+                style: {
+                  display: "block",
+                  boxSizing: "border-box",
+                  width: "100%",
+                  height: 40,
+                  marginTop: 7,
+                  border: "1px solid #D0D5DD",
+                  borderRadius: 8,
+                  padding: "0 12px",
+                  fontSize: 14,
+                },
+              }),
+            ),
+            createElement(
+              "button",
+              {
+                type: "submit",
+                disabled: loading,
+                style: {
+                  height: 46,
+                  border: 0,
+                  borderRadius: 10,
+                  background: "#6558F5",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  marginTop: 4,
+                },
+              },
+              loading ? "Entrando…" : "Entrar",
+            ),
+          )}
+        </View>
+      </View>
+    );
+  return (
+    <View style={styles.loginPage}>
+      <View style={styles.loginCard}>
+        <Image
+          source={require("./assets/dbcompare-logo.png")}
+          style={styles.loginLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.loginTitle}>DBCompare</Text>
+        {error ? <Text style={styles.loginError}>{error}</Text> : null}
+        <Field label="Usuário">
+          <TextInput
+            style={styles.input}
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="characters"
+            autoComplete="username"
+            placeholder="Seu usuário"
+            placeholderTextColor="#98A2B3"
+          />
+        </Field>
+        <Field label="Senha">
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="current-password"
+            placeholder="Sua senha"
+            placeholderTextColor="#98A2B3"
+            onSubmitEditing={submit}
+          />
+        </Field>
+        <Pressable
+          style={[styles.primaryButton, loading && styles.disabled]}
+          onPress={submit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryText}>Entrar</Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
-function UsersPanel({ users, onSave }: { users: FirestoreUserProfile[]; onSave: (form: UserForm, editing: FirestoreUserProfile | null) => Promise<void> }) {
-  const [editing, setEditing] = useState<FirestoreUserProfile | null>(null); const [form, setForm] = useState<UserForm>(emptyUserForm); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  const newUser = () => { setEditing(null); setForm(emptyUserForm); setError(''); };
-  const editUser = (user: FirestoreUserProfile) => { setEditing(user); setForm({ username: user.username, name: user.name, password: '', role: user.role, email: user.email || '', active: user.active }); setError(''); };
-  const save = async () => { try { if (!form.name.trim() || !form.username.trim() || (!editing && !form.password)) throw new Error('Informe nome, usuário e senha.'); setSaving(true); await onSave(form, editing); newUser(); } catch (reason) { setError(errorText(reason)); } finally { setSaving(false); } };
-  return <View style={styles.usersPage}><View style={styles.sectionHeader}><View><Text style={styles.sectionTitle}>Usuários</Text><Text style={styles.sectionSubtitle}>Gerencie os acessos ao DBCompare.</Text></View><Pressable style={styles.primaryButton} onPress={newUser}><Text style={styles.primaryText}>+ Novo usuário</Text></Pressable></View><View style={styles.usersLayout}><View style={[styles.card, styles.usersListPanel]}><ScrollView>{users.map(user => <Pressable key={user.id} style={[styles.userListItem, editing?.id === user.id && styles.userListItemActive]} onPress={() => editUser(user)}><View><Text style={styles.connectionName}>{user.name}</Text><Text style={styles.connectionSub}>{user.username} · {user.role}</Text></View><Text style={[styles.userState, !user.active && styles.userStateInactive]}>{user.active ? 'Ativo' : 'Inativo'}</Text></Pressable>)}</ScrollView></View><View style={[styles.card, styles.userFormPanel]}><Text style={styles.userFormTitle}>{editing ? 'Editar usuário' : 'Novo usuário'}</Text>{error ? <Text style={styles.loginError}>{error}</Text> : null}<Field label="Nome"><TextInput style={styles.input} value={form.name} onChangeText={name => setForm(current => ({ ...current, name }))} /></Field><Field label="Usuário"><TextInput style={styles.input} value={form.username} editable={!editing} onChangeText={username => setForm(current => ({ ...current, username }))} autoCapitalize="characters" /></Field><Field label="Senha"><TextInput style={styles.input} value={form.password} onChangeText={password => setForm(current => ({ ...current, password }))} secureTextEntry /></Field><Field label="E-mail (opcional)"><TextInput style={styles.input} value={form.email} onChangeText={email => setForm(current => ({ ...current, email }))} autoCapitalize="none" keyboardType="email-address" /></Field><Field label="Tipo de usuário"><View style={styles.pickerBox}><Picker style={styles.fullPicker} selectedValue={form.role} onValueChange={(role: UserForm['role']) => setForm(current => ({ ...current, role }))}><Picker.Item label="Comum" value="Comum" /><Picker.Item label="Administrador" value="Administrador" /></Picker></View></Field><Pressable style={styles.activeLine} onPress={() => setForm(current => ({ ...current, active: !current.active }))}><View style={[styles.checkbox, form.active && styles.checkboxChecked]}>{form.active && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.checkboxText}>Usuário ativo</Text></Pressable><Pressable style={[styles.primaryButton, saving && styles.disabled]} onPress={save} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar usuário</Text>}</Pressable></View></View></View>;
+function UsersModal({
+  visible,
+  users,
+  initialUser = null,
+  canManage,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  users: FirestoreUserProfile[];
+  initialUser?: FirestoreUserProfile | null;
+  canManage: boolean;
+  onClose: () => void;
+  onSave: (
+    form: UserForm,
+    editing: FirestoreUserProfile | null,
+  ) => Promise<void>;
+}) {
+  const [form, setForm] = useState<UserForm>(emptyUserForm);
+  const [editing, setEditing] = useState<FirestoreUserProfile | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const openNew = () => {
+    setEditing(null);
+    setForm(emptyUserForm);
+    setError("");
+  };
+  const openEdit = (user: FirestoreUserProfile) => {
+    setEditing(user);
+    setForm({
+      username: user.username,
+      name: user.name,
+      password: "",
+      role: user.role,
+      email: user.email || "",
+      active: user.active,
+    });
+    setError("");
+  };
+  useEffect(() => {
+    if (visible && initialUser) openEdit(initialUser);
+  }, [visible, initialUser?.id]);
+  const save = async () => {
+    try {
+      if (!form.username || !form.name || (!editing && !form.password))
+        throw new Error("Informe usuário, nome e senha.");
+      setSaving(true);
+      await onSave(form, editing);
+      openNew();
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        <ScrollView contentContainerStyle={styles.modalScroll}>
+          <View style={[styles.modal, styles.usersModal]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Usuários</Text>
+                <Text style={styles.modalSubtitle}>
+                  Cadastre e mantenha os acessos do sistema.
+                </Text>
+              </View>
+              <Pressable onPress={onClose}>
+                <Text style={styles.close}>×</Text>
+              </Pressable>
+            </View>
+            <View style={styles.usersLayout}>
+              <View style={styles.usersList}>
+                {canManage && (
+                  <Pressable style={styles.primaryButton} onPress={openNew}>
+                    <Text style={styles.primaryText}>+ Novo usuário</Text>
+                  </Pressable>
+                )}
+                <ScrollView>
+                  {users.map((user) => (
+                    <Pressable
+                      key={user.id}
+                      style={[
+                        styles.userListItem,
+                        editing?.id === user.id && styles.userListItemActive,
+                      ]}
+                      onPress={() => openEdit(user)}
+                    >
+                      <View>
+                        <Text style={styles.connectionName}>{user.name}</Text>
+                        <Text style={styles.connectionSub}>
+                          {user.username} · {user.role}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.userState,
+                          !user.active && styles.userStateInactive,
+                        ]}
+                      >
+                        {user.active ? "Ativo" : "Inativo"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+              <View style={styles.userForm}>
+                <Text style={styles.userFormTitle}>
+                  {editing ? "Editar usuário" : "Novo usuário"}
+                </Text>
+                {error ? <Text style={styles.loginError}>{error}</Text> : null}
+                <Field label="Usuário">
+                  <TextInput
+                    style={styles.input}
+                    value={form.username}
+                    editable={!editing}
+                    onChangeText={(value) =>
+                      setForm((current) => ({ ...current, username: value }))
+                    }
+                    autoCapitalize="characters"
+                  />
+                </Field>
+                <Field label="Nome">
+                  <TextInput
+                    style={styles.input}
+                    value={form.name}
+                    onChangeText={(value) =>
+                      setForm((current) => ({ ...current, name: value }))
+                    }
+                  />
+                </Field>
+                <Field label={editing ? "Nova senha (opcional)" : "Senha"}>
+                  <TextInput
+                    style={styles.input}
+                    value={form.password}
+                    onChangeText={(value) =>
+                      setForm((current) => ({ ...current, password: value }))
+                    }
+                    secureTextEntry
+                  />
+                </Field>
+                <Field label="Tipo de usuário">
+                  <View style={styles.pickerBox}>
+                    <Picker
+                      selectedValue={form.role}
+                      onValueChange={(role: UserForm["role"]) =>
+                        setForm((current) => ({ ...current, role }))
+                      }
+                    >
+                      <Picker.Item label="Comum" value="Comum" />
+                      <Picker.Item
+                        label="Administrador"
+                        value="Administrador"
+                      />
+                    </Picker>
+                  </View>
+                </Field>
+                <Field label="E-mail (opcional)">
+                  <TextInput
+                    style={styles.input}
+                    value={form.email}
+                    onChangeText={(value) =>
+                      setForm((current) => ({ ...current, email: value }))
+                    }
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </Field>
+                <Pressable
+                  style={styles.activeLine}
+                  onPress={() =>
+                    setForm((current) => ({
+                      ...current,
+                      active: !current.active,
+                    }))
+                  }
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      form.active && styles.checkboxChecked,
+                    ]}
+                  >
+                    {form.active && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.checkboxText}>Usuário ativo</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.primaryButton, saving && styles.disabled]}
+                  onPress={save}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryText}>Salvar usuário</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 }
 
-function UserProfileModal({ visible, user, onClose, onSave }: { visible: boolean; user: FirestoreUserProfile; onClose: () => void; onSave: (form: UserForm) => Promise<void> }) {
-  const [form, setForm] = useState<UserForm>({ username: user.username, name: user.name, password: '', role: user.role, email: user.email || '', active: user.active });
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false); const [currentPassword, setCurrentPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [repeatPassword, setRepeatPassword] = useState(''); const [notice, setNotice] = useState(''); const [saving, setSaving] = useState(false);
-  useEffect(() => { if (visible) { setForm({ username: user.username, name: user.name, password: '', role: user.role, email: user.email || '', active: user.active }); setNotice(''); } }, [visible, user]);
-  const saveProfile = async () => { try { if (!form.name.trim()) throw new Error('Informe o nome do usuário.'); setSaving(true); await onSave(form); setNotice('Dados atualizados com sucesso.'); } catch (error) { setNotice(errorText(error)); } finally { setSaving(false); } };
-  const changePassword = async () => { try { if (!currentPassword || !newPassword || !repeatPassword) throw new Error('Preencha todos os campos de senha.'); if (await hashPassword(currentPassword) !== user.passwordHash) throw new Error('A senha atual está incorreta.'); if (newPassword !== repeatPassword) throw new Error('A nova senha e a confirmação não são iguais.'); setSaving(true); await onSave({ ...form, password: newPassword }); setShowPasswordDialog(false); setCurrentPassword(''); setNewPassword(''); setRepeatPassword(''); setNotice('Senha alterada com sucesso.'); } catch (error) { setNotice(errorText(error)); } finally { setSaving(false); } };
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.overlay}><ScrollView contentContainerStyle={styles.modalScroll}><View style={[styles.modal, styles.profileModal]}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Meu cadastro</Text><Text style={styles.modalSubtitle}>Mantenha seus dados cadastrais atualizados.</Text></View><Pressable onPress={onClose}><Text style={styles.close}>×</Text></Pressable></View>{notice ? <Text style={notice.includes('sucesso') ? styles.profileSuccess : styles.loginError}>{notice}</Text> : null}<Field label="Nome"><TextInput style={styles.input} value={form.name} onChangeText={name => setForm(current => ({ ...current, name }))} /></Field><Field label="Usuário"><TextInput style={styles.input} value={form.username} editable={false} /></Field><Field label="Senha"><View style={styles.passwordLine}><TextInput style={[styles.input, styles.passwordInput]} value="••••••••" editable={false} /><Pressable style={styles.secondaryButton} onPress={() => { setNotice(''); setShowPasswordDialog(true); }}><Text style={styles.secondaryText}>Alterar senha</Text></Pressable></View></Field><Field label="E-mail (opcional)"><TextInput style={styles.input} value={form.email} onChangeText={email => setForm(current => ({ ...current, email }))} autoCapitalize="none" keyboardType="email-address" /></Field><Pressable style={[styles.primaryButton, saving && styles.disabled]} onPress={saveProfile} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar dados</Text>}</Pressable><Modal visible={showPasswordDialog} transparent animationType="fade" onRequestClose={() => setShowPasswordDialog(false)}><View style={styles.overlay}><View style={[styles.modal, styles.passwordModal]}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Alterar senha</Text><Text style={styles.modalSubtitle}>Confirme sua senha atual para continuar.</Text></View><Pressable onPress={() => setShowPasswordDialog(false)}><Text style={styles.close}>×</Text></Pressable></View><Field label="Senha atual"><TextInput style={styles.input} value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry /></Field><Field label="Nova senha"><TextInput style={styles.input} value={newPassword} onChangeText={setNewPassword} secureTextEntry /></Field><Field label="Repita a nova senha"><TextInput style={styles.input} value={repeatPassword} onChangeText={setRepeatPassword} secureTextEntry /></Field><Pressable style={[styles.primaryButton, saving && styles.disabled]} onPress={changePassword} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar nova senha</Text>}</Pressable></View></View></Modal></View></ScrollView></View></Modal>;
+function UsersPanel({
+  users,
+  onSave,
+}: {
+  users: FirestoreUserProfile[];
+  onSave: (
+    form: UserForm,
+    editing: FirestoreUserProfile | null,
+  ) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<FirestoreUserProfile | null>(null);
+  const [form, setForm] = useState<UserForm>(emptyUserForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const newUser = () => {
+    setEditing(null);
+    setForm(emptyUserForm);
+    setError("");
+  };
+  const editUser = (user: FirestoreUserProfile) => {
+    setEditing(user);
+    setForm({
+      username: user.username,
+      name: user.name,
+      password: "",
+      role: user.role,
+      email: user.email || "",
+      active: user.active,
+    });
+    setError("");
+  };
+  const save = async () => {
+    try {
+      if (
+        !form.name.trim() ||
+        !form.username.trim() ||
+        (!editing && !form.password)
+      )
+        throw new Error("Informe nome, usuário e senha.");
+      setSaving(true);
+      await onSave(form, editing);
+      newUser();
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <View style={styles.usersPage}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Usuários</Text>
+          <Text style={styles.sectionSubtitle}>
+            Gerencie os acessos ao DBCompare.
+          </Text>
+        </View>
+        <Pressable style={styles.primaryButton} onPress={newUser}>
+          <Text style={styles.primaryText}>+ Novo usuário</Text>
+        </Pressable>
+      </View>
+      <View style={styles.usersLayout}>
+        <View style={[styles.card, styles.usersListPanel]}>
+          <ScrollView>
+            {users.map((user) => (
+              <Pressable
+                key={user.id}
+                style={[
+                  styles.userListItem,
+                  editing?.id === user.id && styles.userListItemActive,
+                ]}
+                onPress={() => editUser(user)}
+              >
+                <View>
+                  <Text style={styles.connectionName}>{user.name}</Text>
+                  <Text style={styles.connectionSub}>
+                    {user.username} · {user.role}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.userState,
+                    !user.active && styles.userStateInactive,
+                  ]}
+                >
+                  {user.active ? "Ativo" : "Inativo"}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+        <View style={[styles.card, styles.userFormPanel]}>
+          <Text style={styles.userFormTitle}>
+            {editing ? "Editar usuário" : "Novo usuário"}
+          </Text>
+          {error ? <Text style={styles.loginError}>{error}</Text> : null}
+          <Field label="Nome">
+            <TextInput
+              style={styles.input}
+              value={form.name}
+              onChangeText={(name) =>
+                setForm((current) => ({ ...current, name }))
+              }
+            />
+          </Field>
+          <Field label="Usuário">
+            <TextInput
+              style={styles.input}
+              value={form.username}
+              editable={!editing}
+              onChangeText={(username) =>
+                setForm((current) => ({ ...current, username }))
+              }
+              autoCapitalize="characters"
+            />
+          </Field>
+          <Field label="Senha">
+            <TextInput
+              style={styles.input}
+              value={form.password}
+              onChangeText={(password) =>
+                setForm((current) => ({ ...current, password }))
+              }
+              secureTextEntry
+            />
+          </Field>
+          <Field label="E-mail (opcional)">
+            <TextInput
+              style={styles.input}
+              value={form.email}
+              onChangeText={(email) =>
+                setForm((current) => ({ ...current, email }))
+              }
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </Field>
+          <Field label="Tipo de usuário">
+            <View style={styles.pickerBox}>
+              <Picker
+                style={styles.fullPicker}
+                selectedValue={form.role}
+                onValueChange={(role: UserForm["role"]) =>
+                  setForm((current) => ({ ...current, role }))
+                }
+              >
+                <Picker.Item label="Comum" value="Comum" />
+                <Picker.Item label="Administrador" value="Administrador" />
+              </Picker>
+            </View>
+          </Field>
+          <Pressable
+            style={styles.activeLine}
+            onPress={() =>
+              setForm((current) => ({ ...current, active: !current.active }))
+            }
+          >
+            <View
+              style={[styles.checkbox, form.active && styles.checkboxChecked]}
+            >
+              {form.active && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.checkboxText}>Usuário ativo</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.primaryButton, saving && styles.disabled]}
+            onPress={save}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryText}>Salvar usuário</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function UserProfileModal({
+  visible,
+  user,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  user: FirestoreUserProfile;
+  onClose: () => void;
+  onSave: (form: UserForm) => Promise<void>;
+}) {
+  const [form, setForm] = useState<UserForm>({
+    username: user.username,
+    name: user.name,
+    password: "",
+    role: user.role,
+    email: user.email || "",
+    active: user.active,
+  });
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
+  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (visible) {
+      setForm({
+        username: user.username,
+        name: user.name,
+        password: "",
+        role: user.role,
+        email: user.email || "",
+        active: user.active,
+      });
+      setNotice("");
+    }
+  }, [visible, user]);
+  const saveProfile = async () => {
+    try {
+      if (!form.name.trim()) throw new Error("Informe o nome do usuário.");
+      setSaving(true);
+      await onSave(form);
+      setNotice("Dados atualizados com sucesso.");
+    } catch (error) {
+      setNotice(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const changePassword = async () => {
+    try {
+      if (!currentPassword || !newPassword || !repeatPassword)
+        throw new Error("Preencha todos os campos de senha.");
+      if ((await hashPassword(currentPassword)) !== user.passwordHash)
+        throw new Error("A senha atual está incorreta.");
+      if (newPassword !== repeatPassword)
+        throw new Error("A nova senha e a confirmação não são iguais.");
+      setSaving(true);
+      await onSave({ ...form, password: newPassword });
+      setShowPasswordDialog(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setRepeatPassword("");
+      setNotice("Senha alterada com sucesso.");
+    } catch (error) {
+      setNotice(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        <ScrollView contentContainerStyle={styles.modalScroll}>
+          <View style={[styles.modal, styles.profileModal]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Meu cadastro</Text>
+                <Text style={styles.modalSubtitle}>
+                  Mantenha seus dados cadastrais atualizados.
+                </Text>
+              </View>
+              <Pressable onPress={onClose}>
+                <Text style={styles.close}>×</Text>
+              </Pressable>
+            </View>
+            {notice ? (
+              <Text
+                style={
+                  notice.includes("sucesso")
+                    ? styles.profileSuccess
+                    : styles.loginError
+                }
+              >
+                {notice}
+              </Text>
+            ) : null}
+            <Field label="Nome">
+              <TextInput
+                style={styles.input}
+                value={form.name}
+                onChangeText={(name) =>
+                  setForm((current) => ({ ...current, name }))
+                }
+              />
+            </Field>
+            <Field label="Usuário">
+              <TextInput
+                style={styles.input}
+                value={form.username}
+                editable={false}
+              />
+            </Field>
+            <Field label="Senha">
+              <View style={styles.passwordLine}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value="••••••••"
+                  editable={false}
+                />
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    setNotice("");
+                    setShowPasswordDialog(true);
+                  }}
+                >
+                  <Text style={styles.secondaryText}>Alterar senha</Text>
+                </Pressable>
+              </View>
+            </Field>
+            <Field label="E-mail (opcional)">
+              <TextInput
+                style={styles.input}
+                value={form.email}
+                onChangeText={(email) =>
+                  setForm((current) => ({ ...current, email }))
+                }
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </Field>
+            <Pressable
+              style={[styles.primaryButton, saving && styles.disabled]}
+              onPress={saveProfile}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryText}>Salvar dados</Text>
+              )}
+            </Pressable>
+            <Modal
+              visible={showPasswordDialog}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowPasswordDialog(false)}
+            >
+              <View style={styles.overlay}>
+                <View style={[styles.modal, styles.passwordModal]}>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalTitle}>Alterar senha</Text>
+                      <Text style={styles.modalSubtitle}>
+                        Confirme sua senha atual para continuar.
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => setShowPasswordDialog(false)}>
+                      <Text style={styles.close}>×</Text>
+                    </Pressable>
+                  </View>
+                  <Field label="Senha atual">
+                    <TextInput
+                      style={styles.input}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      secureTextEntry
+                    />
+                  </Field>
+                  <Field label="Nova senha">
+                    <TextInput
+                      style={styles.input}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      secureTextEntry
+                    />
+                  </Field>
+                  <Field label="Repita a nova senha">
+                    <TextInput
+                      style={styles.input}
+                      value={repeatPassword}
+                      onChangeText={setRepeatPassword}
+                      secureTextEntry
+                    />
+                  </Field>
+                  <Pressable
+                    style={[styles.primaryButton, saving && styles.disabled]}
+                    onPress={changePassword}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryText}>Salvar nova senha</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            </Modal>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+function SettingsPanel({
+  ignoredParameters,
+  onSave,
+}: {
+  ignoredParameters: string[];
+  onSave: (parameters: string[]) => Promise<void>;
+}) {
+  const [value, setValue] = useState(ignoredParameters.join(", "));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<Notice>(null);
+  useEffect(() => setValue(ignoredParameters.join(", ")), [ignoredParameters]);
+  const save = async () => {
+    try {
+      setSaving(true);
+      setMessage(null);
+      const parameters = [
+        ...new Set(
+          value
+            .split(",")
+            .map((item) => item.trim().toLocaleUpperCase())
+            .filter(Boolean),
+        ),
+      ];
+      await onSave(parameters);
+      setValue(parameters.join(", "));
+      setMessage({
+        type: "success",
+        title: "Configurações salvas",
+        message:
+          "Os parâmetros informados serão ignorados nas próximas comparações.",
+      });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        title: "Não foi possível salvar",
+        message: errorText(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <View style={styles.settingsPage}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Configurações</Text>
+        </View>
+      </View>
+      <View style={[styles.card, styles.settingsCard]}>
+        <Text style={styles.userFormTitle}>Parâmetros Ignorados</Text>
+        <Text style={styles.sectionSubtitle}>
+          Parâmetros de sistema ignorados na comparação
+        </Text>
+        {message && <NoticeBox notice={message} />}
+        <Field label="Parâmetros">
+          <TextInput
+            style={[styles.input, styles.settingsInput]}
+            value={value}
+            onChangeText={setValue}
+            placeholder="Ex.: PARAMETRO_1, PARAMETRO_2"
+            placeholderTextColor="#98A2B3"
+            autoCapitalize="characters"
+          />
+        </Field>
+        <Text style={styles.settingsHelp}>
+          Informe os códigos separados por vírgula. Eles não serão considerados
+          no resultado da comparação.
+        </Text>
+        <Pressable
+          style={[
+            styles.primaryButton,
+            styles.settingsButton,
+            saving && styles.disabled,
+          ]}
+          onPress={save}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryText}>Salvar configurações</Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'compare' | 'connections' | 'users'>('compare');
+  const [activeTab, setActiveTab] = useState<
+    "compare" | "connections" | "settings" | "users"
+  >("compare");
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [leftCompare, setLeftCompare] = useState<CompareSelection>({ connectionId: '', username: '', password: '' });
-  const [rightCompare, setRightCompare] = useState<CompareSelection>({ connectionId: '', username: '', password: '' });
+  const [leftCompare, setLeftCompare] = useState<CompareSelection>({
+    connectionId: "",
+    username: "",
+    password: "",
+  });
+  const [rightCompare, setRightCompare] = useState<CompareSelection>({
+    connectionId: "",
+    username: "",
+    password: "",
+  });
   const [compareRows, setCompareRows] = useState<CompareResult[] | null>(null);
   const [comparing, setComparing] = useState(false);
-  const [descriptionDetail, setDescriptionDetail] = useState<CompareResult | null>(null);
-  const [explanationDetail, setExplanationDetail] = useState<CompareResult | null>(null);
+  const [descriptionDetail, setDescriptionDetail] =
+    useState<CompareResult | null>(null);
+  const [explanationDetail, setExplanationDetail] =
+    useState<CompareResult | null>(null);
   const [onlyDifferent, setOnlyDifferent] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
-  const [resultFilters, setResultFilters] = useState<Record<string, string>>({ code: '', description: '', explanation: '', first: '', second: '', status: '' });
+  const [resultFilters, setResultFilters] = useState<Record<string, string>>({
+    code: "",
+    description: "",
+    explanation: "",
+    first: "",
+    second: "",
+    status: "",
+  });
   const [form, setForm] = useState<FormData>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,134 +1512,1979 @@ export default function App() {
   const [notice, setNotice] = useState<Notice>(null);
   const [showForm, setShowForm] = useState(false);
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
+  const [ignoredParameters, setIgnoredParameters] = useState<string[]>([]);
   const [showUsers, setShowUsers] = useState(false);
-  const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(() => {
-    if (Platform.OS !== 'web') return null;
-    try { return JSON.parse(window.localStorage.getItem('dbcompare-session') || 'null'); } catch { return null; }
-  });
+  const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(
+    () => {
+      if (Platform.OS !== "web") return null;
+      try {
+        return JSON.parse(
+          window.localStorage.getItem("dbcompare-session") || "null",
+        );
+      } catch {
+        return null;
+      }
+    },
+  );
   // O id será fornecido pelo login quando o Firebase Authentication estiver
   // habilitado. Enquanto isso, a preferência permanece no navegador para que
   // a alternância já funcione nesta versão.
   const currentUserId = currentUser?.id || null;
   const [theme, setTheme] = useState<Theme>(() => {
-    if (Platform.OS !== 'web') return 'light';
-    return window.localStorage.getItem('dbcompare-theme') === 'dark' ? 'dark' : 'light';
+    if (Platform.OS !== "web") return "light";
+    return window.localStorage.getItem("dbcompare-theme") === "dark"
+      ? "dark"
+      : "light";
   });
-  const request = async (path: string, options?: RequestInit) => { const response = await fetch(`${apiUrl}${path}`, { headers: { 'Content-Type': 'application/json' }, ...options }); const body = await response.json().catch(() => ({ message: 'Resposta inválida da API.' })); if (!response.ok) throw new Error(body.message || 'Não foi possível concluir a operação.'); return body; };
-  const loadConnections = async () => { try { setLoading(true); setConnections(await listConnections()); setFirestoreOnline(true); } catch (error) { setFirestoreOnline(false); setNotice({ type: 'error', title: 'Não foi possível acessar o Firestore', message: errorText(error) }); } finally { setLoading(false); } };
-  const loadUsers = async () => { setUsers(await listUsers()); };
-  const login = async (username: string, password: string) => { const normalized = username.trim().toLocaleUpperCase(); if (!normalized || !password) throw new Error('Informe usuário e senha.'); const user = (await listUsers()).find(item => item.username.toLocaleUpperCase() === normalized); if (!user || user.passwordHash !== await hashPassword(password)) throw new Error('Usuário ou senha inválidos.'); if (!user.active) throw new Error('Este usuário está inativo.'); setCurrentUser(user); setTheme(user.themePreference || 'light'); setActiveTab('compare'); if (Platform.OS === 'web') { window.localStorage.setItem('dbcompare-session', JSON.stringify(user)); const PasswordCredential = (window as any).PasswordCredential; if (PasswordCredential && navigator.credentials?.store) void navigator.credentials.store(new PasswordCredential({ id: normalized, password, name: user.name })).catch(() => undefined); } };
-  const saveUser = async (userForm: UserForm, editing: FirestoreUserProfile | null) => { const username = userForm.username.trim().toLocaleUpperCase(); if (!editing && users.some(user => user.username.toLocaleUpperCase() === username)) throw new Error('Já existe um usuário com esse identificador.'); const passwordHash = userForm.password ? await hashPassword(userForm.password) : editing?.passwordHash || ''; const payload = { username, name: userForm.name.trim(), role: userForm.role, email: userForm.email.trim() || undefined, createdAt: editing?.createdAt || new Date().toISOString(), active: userForm.active, themePreference: editing?.themePreference || 'light' as Theme, passwordHash }; if (editing) await updateUser({ id: editing.id, ...payload }); else await createUser(payload); await loadUsers(); if (editing && editing.id === currentUser?.id) { const updated = { id: editing.id, ...payload }; setCurrentUser(updated); if (Platform.OS === 'web') window.localStorage.setItem('dbcompare-session', JSON.stringify(updated)); } };
-  useEffect(() => { loadConnections(); }, []);
-  useEffect(() => { if (currentUser?.role === 'Administrador') void loadUsers(); }, [currentUser?.role]);
+  const request = async (path: string, options?: RequestInit) => {
+    const response = await fetch(`${apiUrl}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    const body = await response
+      .json()
+      .catch(() => ({ message: "Resposta inválida da API." }));
+    if (!response.ok)
+      throw new Error(body.message || "Não foi possível concluir a operação.");
+    return body;
+  };
+  const loadConnections = async () => {
+    try {
+      setLoading(true);
+      setConnections(await listConnections());
+      setFirestoreOnline(true);
+    } catch (error) {
+      setFirestoreOnline(false);
+      setNotice({
+        type: "error",
+        title: "Não foi possível acessar o Firestore",
+        message: errorText(error),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  const loadUsers = async () => {
+    setUsers(await listUsers());
+  };
+  const loadSettings = async () => {
+    const settings = await getSettings();
+    setIgnoredParameters(settings.ignoredParameters);
+  };
+  const login = async (username: string, password: string) => {
+    const normalized = username.trim().toLocaleUpperCase();
+    if (!normalized || !password) throw new Error("Informe usuário e senha.");
+    const user = (await listUsers()).find(
+      (item) => item.username.toLocaleUpperCase() === normalized,
+    );
+    if (!user || user.passwordHash !== (await hashPassword(password)))
+      throw new Error("Usuário ou senha inválidos.");
+    if (!user.active) throw new Error("Este usuário está inativo.");
+    setCurrentUser(user);
+    setTheme(user.themePreference || "light");
+    setActiveTab("compare");
+    if (Platform.OS === "web") {
+      window.localStorage.setItem("dbcompare-session", JSON.stringify(user));
+      const PasswordCredential = (window as any).PasswordCredential;
+      if (PasswordCredential && navigator.credentials?.store)
+        void navigator.credentials
+          .store(
+            new PasswordCredential({
+              id: normalized,
+              password,
+              name: user.name,
+            }),
+          )
+          .catch(() => undefined);
+    }
+  };
+  const saveUser = async (
+    userForm: UserForm,
+    editing: FirestoreUserProfile | null,
+  ) => {
+    const username = userForm.username.trim().toLocaleUpperCase();
+    if (
+      !editing &&
+      users.some((user) => user.username.toLocaleUpperCase() === username)
+    )
+      throw new Error("Já existe um usuário com esse identificador.");
+    const passwordHash = userForm.password
+      ? await hashPassword(userForm.password)
+      : editing?.passwordHash || "";
+    const payload = {
+      username,
+      name: userForm.name.trim(),
+      role: userForm.role,
+      email: userForm.email.trim() || undefined,
+      createdAt: editing?.createdAt || new Date().toISOString(),
+      active: userForm.active,
+      themePreference: editing?.themePreference || ("light" as Theme),
+      passwordHash,
+    };
+    if (editing) await updateUser({ id: editing.id, ...payload });
+    else await createUser(payload);
+    await loadUsers();
+    if (editing && editing.id === currentUser?.id) {
+      const updated = { id: editing.id, ...payload };
+      setCurrentUser(updated);
+      if (Platform.OS === "web")
+        window.localStorage.setItem(
+          "dbcompare-session",
+          JSON.stringify(updated),
+        );
+    }
+  };
   useEffect(() => {
-    if (!currentUser) return;
-    void listUsers().then(usersFromDatabase => {
-      const latest = usersFromDatabase.find(user => user.id === currentUser.id);
-      if (!latest?.active) { setCurrentUser(null); if (Platform.OS === 'web') window.localStorage.removeItem('dbcompare-session'); }
-      else { setCurrentUser(latest); if (Platform.OS === 'web') window.localStorage.setItem('dbcompare-session', JSON.stringify(latest)); }
-    }).catch(() => undefined);
+    loadConnections();
+    void loadSettings().catch(() => undefined);
   }, []);
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const styleId = 'dbcompare-theme-styles';
+    if (currentUser?.role === "Administrador") void loadUsers();
+  }, [currentUser?.role]);
+  useEffect(() => {
+    if (!currentUser) return;
+    void listUsers()
+      .then((usersFromDatabase) => {
+        const latest = usersFromDatabase.find(
+          (user) => user.id === currentUser.id,
+        );
+        if (!latest?.active) {
+          setCurrentUser(null);
+          if (Platform.OS === "web")
+            window.localStorage.removeItem("dbcompare-session");
+        } else {
+          setCurrentUser(latest);
+          if (Platform.OS === "web")
+            window.localStorage.setItem(
+              "dbcompare-session",
+              JSON.stringify(latest),
+            );
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const styleId = "dbcompare-theme-styles";
     let element = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!element) { element = document.createElement('style'); element.id = styleId; document.head.appendChild(element); }
-    element.textContent = 'form label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-weight: 800 !important; } #dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img { opacity: 0; }';
-    document.getElementById('dbcompare-app')?.classList.toggle('dark-theme', theme === 'dark');
-    const sidebarLogo = document.querySelector('#dbcompare-app img') as HTMLElement | null;
-    if (sidebarLogo && theme === 'light') sidebarLogo.style.cssText = 'width:164px;height:130px;box-sizing:border-box;background:#071D3A;border:2px solid #101828;border-radius:16px;';
-    const existingLightLogo = document.getElementById('dbcompare-light-logo');
-    if (theme === 'light' && sidebarLogo) {
+    if (!element) {
+      element = document.createElement("style");
+      element.id = styleId;
+      document.head.appendChild(element);
+    }
+    element.textContent =
+      'form label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-weight: 800 !important; } #dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img { opacity: 0; }';
+    document
+      .getElementById("dbcompare-app")
+      ?.classList.toggle("dark-theme", theme === "dark");
+    const sidebarLogo = document.querySelector(
+      "#dbcompare-app img",
+    ) as HTMLElement | null;
+    if (sidebarLogo && theme === "light")
+      sidebarLogo.style.cssText =
+        "width:164px;height:130px;box-sizing:border-box;background:#071D3A;border:2px solid #101828;border-radius:16px;";
+    const existingLightLogo = document.getElementById("dbcompare-light-logo");
+    if (theme === "light" && sidebarLogo) {
       if (!existingLightLogo) {
-        const overlay = document.createElement('div'); overlay.id = 'dbcompare-light-logo';
-        overlay.style.cssText = 'position:fixed;top:22px;left:22px;z-index:20;width:164px;height:130px;box-sizing:border-box;border:3px solid #101828;border-radius:16px;overflow:hidden;background:#071D3A;pointer-events:none;';
-        const image = document.createElement('img'); image.src = sidebarLogo.getAttribute('src') || ''; image.style.cssText = 'display:block;width:160px;height:126px;object-fit:contain;';
-        overlay.appendChild(image); document.body.appendChild(overlay);
+        const overlay = document.createElement("div");
+        overlay.id = "dbcompare-light-logo";
+        overlay.style.cssText =
+          "position:fixed;top:22px;left:22px;z-index:20;width:164px;height:130px;box-sizing:border-box;border:3px solid #101828;border-radius:16px;overflow:hidden;background:#071D3A;pointer-events:none;";
+        const image = document.createElement("img");
+        image.src = sidebarLogo.getAttribute("src") || "";
+        image.style.cssText =
+          "display:block;width:160px;height:126px;object-fit:contain;";
+        overlay.appendChild(image);
+        document.body.appendChild(overlay);
       }
     } else existingLightLogo?.remove();
-    window.localStorage.setItem('dbcompare-theme', theme);
+    window.localStorage.setItem("dbcompare-theme", theme);
   }, [theme]);
-  useEffect(() => { const checkConnector = async () => { try { const response = await fetch(`${apiUrl}/api/health`); setConnectorOnline(response.ok); } catch { setConnectorOnline(false); } }; void checkConnector(); const interval = setInterval(checkConnector, 15000); return () => clearInterval(interval); }, []);
-  useEffect(() => { if (firestoreOnline !== false) { firestorePulse.stopAnimation(); firestorePulse.setValue(1); return; } const animation = Animated.loop(Animated.sequence([Animated.timing(firestorePulse, { toValue: .35, duration: 650, useNativeDriver: true }), Animated.timing(firestorePulse, { toValue: 1, duration: 650, useNativeDriver: true })])); animation.start(); return () => animation.stop(); }, [firestoreOnline, firestorePulse]);
-  useEffect(() => { if (connectorOnline !== false) { connectorPulse.stopAnimation(); connectorPulse.setValue(1); return; } const animation = Animated.loop(Animated.sequence([Animated.timing(connectorPulse, { toValue: .35, duration: 650, useNativeDriver: true }), Animated.timing(connectorPulse, { toValue: 1, duration: 650, useNativeDriver: true })])); animation.start(); return () => animation.stop(); }, [connectorOnline, connectorPulse]);
-  const update = <K extends keyof FormData>(key: K, value: FormData[K]) => setForm(current => ({ ...current, [key]: value }));
-  const validate = (passwordRequired = true) => { if (!form.name || !form.host || !form.database || !form.username || (passwordRequired && !form.password)) throw new Error(passwordRequired ? 'Preencha todos os campos, incluindo a senha.' : 'Preencha nome, tipo, host, porta, base e usuário.'); if (!Number.isInteger(Number(form.port)) || Number(form.port) < 1 || Number(form.port) > 65535) throw new Error('Informe uma porta válida (1 a 65535).'); };
-  const startNew = () => { setEditingId(null); setForm(emptyForm); setNotice(null); setShowForm(true); };
-  const edit = (item: Connection) => { setEditingId(item.id); setForm({ name: item.name, environmentType: item.environmentType || 'Produção', databaseType: item.databaseType, host: item.host, port: item.port, database: item.database, username: item.username, password: '' }); setNotice(null); setShowForm(true); };
-  const selectForCompare = (id: string, setSelection: (selection: CompareSelection) => void, current: CompareSelection) => { const connection = connections.find(item => item.id === id); setSelection({ ...current, connectionId: id, username: connection?.username || '', password: connection && environmentsWithDefaultPassword.includes(connection.environmentType) ? 'agesune1' : '' }); };
-  const downloadConnector = () => { if (Platform.OS === 'web') window.open(connectorDownloadUrl, '_blank', 'noopener,noreferrer'); };
+  useEffect(() => {
+    const checkConnector = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/health`);
+        setConnectorOnline(response.ok);
+      } catch {
+        setConnectorOnline(false);
+      }
+    };
+    void checkConnector();
+    const interval = setInterval(checkConnector, 15000);
+    return () => clearInterval(interval);
+  }, []);
+  useEffect(() => {
+    if (firestoreOnline !== false) {
+      firestorePulse.stopAnimation();
+      firestorePulse.setValue(1);
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(firestorePulse, {
+          toValue: 0.35,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+        Animated.timing(firestorePulse, {
+          toValue: 1,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [firestoreOnline, firestorePulse]);
+  useEffect(() => {
+    if (connectorOnline !== false) {
+      connectorPulse.stopAnimation();
+      connectorPulse.setValue(1);
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(connectorPulse, {
+          toValue: 0.35,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+        Animated.timing(connectorPulse, {
+          toValue: 1,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [connectorOnline, connectorPulse]);
+  const update = <K extends keyof FormData>(key: K, value: FormData[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const validate = (passwordRequired = true) => {
+    if (
+      !form.name ||
+      !form.host ||
+      !form.database ||
+      !form.username ||
+      (passwordRequired && !form.password)
+    )
+      throw new Error(
+        passwordRequired
+          ? "Preencha todos os campos, incluindo a senha."
+          : "Preencha nome, tipo, host, porta, base e usuário.",
+      );
+    if (
+      !Number.isInteger(Number(form.port)) ||
+      Number(form.port) < 1 ||
+      Number(form.port) > 65535
+    )
+      throw new Error("Informe uma porta válida (1 a 65535).");
+  };
+  const startNew = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setNotice(null);
+    setShowForm(true);
+  };
+  const edit = (item: Connection) => {
+    setEditingId(item.id);
+    setForm({
+      name: item.name,
+      environmentType: item.environmentType || "Produção",
+      databaseType: item.databaseType,
+      host: item.host,
+      port: item.port,
+      database: item.database,
+      username: item.username,
+      password: "",
+    });
+    setNotice(null);
+    setShowForm(true);
+  };
+  const selectForCompare = (
+    id: string,
+    setSelection: (selection: CompareSelection) => void,
+    current: CompareSelection,
+  ) => {
+    const connection = connections.find((item) => item.id === id);
+    setSelection({
+      ...current,
+      connectionId: id,
+      username: connection?.username || "",
+      password:
+        connection &&
+        environmentsWithDefaultPassword.includes(connection.environmentType)
+          ? "agesune1"
+          : "",
+    });
+  };
+  const downloadConnector = () => {
+    if (Platform.OS === "web")
+      window.open(connectorDownloadUrl, "_blank", "noopener,noreferrer");
+  };
   const toggleTheme = () => {
-    const nextTheme: Theme = theme === 'light' ? 'dark' : 'light';
+    const nextTheme: Theme = theme === "light" ? "dark" : "light";
     setTheme(nextTheme);
-    if (currentUserId) void updateUserTheme(currentUserId, nextTheme).catch(() => undefined);
+    if (currentUserId)
+      void updateUserTheme(currentUserId, nextTheme).catch(() => undefined);
   };
   const signOut = () => {
-    if (Platform.OS === 'web' && !window.confirm('Deseja realmente encerrar a sessão?')) return;
-    if (Platform.OS === 'web') window.localStorage.removeItem('dbcompare-session');
+    if (
+      Platform.OS === "web" &&
+      !window.confirm("Deseja realmente encerrar a sessão?")
+    )
+      return;
+    if (Platform.OS === "web")
+      window.localStorage.removeItem("dbcompare-session");
     setCurrentUser(null);
   };
   if (!currentUser) return <LoginScreen onLogin={login} />;
-  const isUsersTab = () => activeTab === 'users';
-  if (showUsers && isUsersTab()) return <UserProfileModal visible user={currentUser} onClose={() => { setShowUsers(false); setActiveTab('compare'); }} onSave={form => saveUser(form, currentUser)} />;
-  const compareBases = async () => { try { const first = connections.find(connection => connection.id === leftCompare.connectionId); const second = connections.find(connection => connection.id === rightCompare.connectionId); if (!first || !second || !leftCompare.password || !rightCompare.password) throw new Error('Selecione as duas bases e informe usuário e senha para cada uma.'); setComparing(true); setNotice(null); const result = await request('/api/compare', { method: 'POST', body: JSON.stringify({ first: { ...first, username: leftCompare.username, password: leftCompare.password }, second: { ...second, username: rightCompare.username, password: rightCompare.password } }) }); setCompareRows(result.rows); } catch (error) { setCompareRows(null); setNotice({ type: 'error', title: 'Não foi possível comparar', message: errorText(error) }); } finally { setComparing(false); } };
-  const selectedName = (id: string, fallback: string) => connections.find(connection => connection.id === id)?.name || fallback;
-  const test = async () => { try { validate(); setSaving(true); setNotice(null); const result = await request('/api/connections/test', { method: 'POST', body: JSON.stringify({ ...form, port: Number(form.port) }) }); setNotice({ type: 'success', title: 'Conexão estabelecida', message: result.message }); } catch (error) { setNotice({ type: 'error', title: 'Falha no teste', message: errorText(error) }); } finally { setSaving(false); } };
-  const save = async () => { try { validate(false); setSaving(true); setNotice(null); const connection = { name: form.name, environmentType: form.environmentType, databaseType: form.databaseType, host: form.host, port: Number(form.port), database: form.database, username: form.username }; if (editingId) await updateConnection({ id: editingId, ...connection }); else await createConnection(connection); await loadConnections(); setShowForm(false); setNotice({ type: 'success', title: 'Tudo certo', message: editingId ? 'Conexão atualizada no Firestore.' : 'Conexão cadastrada no Firestore.' }); } catch (error) { setNotice({ type: 'error', title: 'Não foi possível salvar no Firestore', message: errorText(error) }); } finally { setSaving(false); } };
-  const remove = async (item: Connection) => { if (Platform.OS === 'web' && !window.confirm(`Excluir a conexão “${item.name}”?`)) return; try { await deleteConnection(item.id); await loadConnections(); setNotice({ type: 'success', title: 'Conexão excluída', message: `${item.name} foi removida do Firestore.` }); } catch (error) { setNotice({ type: 'error', title: 'Não foi possível excluir do Firestore', message: errorText(error) }); } };
+  const isUsersTab = () => activeTab === "users";
+  if (showUsers && isUsersTab())
+    return (
+      <UserProfileModal
+        visible
+        user={currentUser}
+        onClose={() => {
+          setShowUsers(false);
+          setActiveTab("compare");
+        }}
+        onSave={(form) => saveUser(form, currentUser)}
+      />
+    );
+  const compareBases = async () => {
+    try {
+      const first = connections.find(
+        (connection) => connection.id === leftCompare.connectionId,
+      );
+      const second = connections.find(
+        (connection) => connection.id === rightCompare.connectionId,
+      );
+      if (!first || !second || !leftCompare.password || !rightCompare.password)
+        throw new Error(
+          "Selecione as duas bases e informe usuário e senha para cada uma.",
+        );
+      setComparing(true);
+      setNotice(null);
+      const result = await request("/api/compare", {
+        method: "POST",
+        body: JSON.stringify({
+          first: {
+            ...first,
+            username: leftCompare.username,
+            password: leftCompare.password,
+          },
+          second: {
+            ...second,
+            username: rightCompare.username,
+            password: rightCompare.password,
+          },
+          ignoredParameters,
+        }),
+      });
+      setCompareRows(result.rows);
+    } catch (error) {
+      setCompareRows(null);
+      setNotice({
+        type: "error",
+        title: "Não foi possível comparar",
+        message: errorText(error),
+      });
+    } finally {
+      setComparing(false);
+    }
+  };
+  const saveSettings = async (parameters: string[]) => {
+    await updateSettings({ ignoredParameters: parameters });
+    setIgnoredParameters(parameters);
+  };
+  const selectedName = (id: string, fallback: string) =>
+    connections.find((connection) => connection.id === id)?.name || fallback;
+  const test = async () => {
+    try {
+      validate();
+      setSaving(true);
+      setNotice(null);
+      const result = await request("/api/connections/test", {
+        method: "POST",
+        body: JSON.stringify({ ...form, port: Number(form.port) }),
+      });
+      setNotice({
+        type: "success",
+        title: "Conexão estabelecida",
+        message: result.message,
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        title: "Falha no teste",
+        message: errorText(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const save = async () => {
+    try {
+      validate(false);
+      setSaving(true);
+      setNotice(null);
+      const connection = {
+        name: form.name,
+        environmentType: form.environmentType,
+        databaseType: form.databaseType,
+        host: form.host,
+        port: Number(form.port),
+        database: form.database,
+        username: form.username,
+      };
+      if (editingId) await updateConnection({ id: editingId, ...connection });
+      else await createConnection(connection);
+      await loadConnections();
+      setShowForm(false);
+      setNotice({
+        type: "success",
+        title: "Tudo certo",
+        message: editingId
+          ? "Conexão atualizada no Firestore."
+          : "Conexão cadastrada no Firestore.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        title: "Não foi possível salvar no Firestore",
+        message: errorText(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (item: Connection) => {
+    if (
+      Platform.OS === "web" &&
+      !window.confirm(`Excluir a conexão “${item.name}”?`)
+    )
+      return;
+    try {
+      await deleteConnection(item.id);
+      await loadConnections();
+      setNotice({
+        type: "success",
+        title: "Conexão excluída",
+        message: `${item.name} foi removida do Firestore.`,
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        title: "Não foi possível excluir do Firestore",
+        message: errorText(error),
+      });
+    }
+  };
 
-  return <View style={styles.page}>{theme === 'dark' && <View pointerEvents="none" style={styles.darkLogoOverlay}><Image source={require('./assets/dbcompare-logo.png')} style={styles.darkLogo} resizeMode="contain" /></View>}<View nativeID="dbcompare-app" style={styles.page}><StatusBar style={theme === 'dark' ? 'light' : 'dark'} /><View pointerEvents="none" style={styles.orbOne} /><View pointerEvents="none" style={styles.orbTwo} /><View pointerEvents="none" style={styles.watermarkBlue} /><View pointerEvents="none" style={styles.watermarkGreen} /><View pointerEvents="none" style={styles.watermarkRing} /><View style={styles.appShell}><View style={styles.sidebar}><View style={styles.sidebarBrand}><Image source={require('./assets/dbcompare-logo.png')} style={styles.sidebarLogo} resizeMode="contain" /><Text style={styles.sidebarTitle}>DBCompare</Text></View><View style={styles.sideTabs}><Tab text="Comparar Bases" active={activeTab === 'compare'} onPress={() => setActiveTab('compare')} /><Tab text="Conexões" active={activeTab === 'connections'} onPress={() => setActiveTab('connections')} />{currentUser.role === 'Administrador' && <Tab text="Usuários" active={activeTab === 'users'} onPress={() => { setShowUsers(false); setActiveTab('users'); }} />}</View><View style={styles.sidebarFooter}><View style={styles.userBar}><View style={styles.userAvatar}><Text style={styles.userAvatarText}>{(currentUser.name || currentUser.username).trim().charAt(0).toLocaleUpperCase()}</Text></View><Pressable onPress={() => { setShowUsers(true); setActiveTab('users'); }}><Text style={styles.userName}>{currentUser.username}</Text></Pressable><Pressable onPress={toggleTheme} style={styles.themeToggle} accessibilityLabel={theme === 'light' ? 'Ativar tema escuro' : 'Ativar tema claro'}><Text style={styles.themeToggleText}>{theme === 'light' ? '🌙' : '☀️'}</Text></Pressable><Pressable onPress={signOut} style={styles.signOutButton} accessibilityLabel="Sair"><Text style={styles.signOutText}>⏻</Text></Pressable></View><View style={styles.sidebarStatuses}><Animated.View style={[styles.sideStatus, connectorOnline === false && { opacity: connectorPulse }]}><View style={[styles.dot, connectorOnline === false && styles.dotOffline, connectorOnline === null && styles.dotWaiting]} /><Text style={[styles.statusText, connectorOnline === false && styles.statusTextOffline, connectorOnline === null && styles.statusTextWaiting]}>{connectorOnline === false ? 'DBCompare Connector indisponível' : connectorOnline ? 'DBCompare Connector conectado' : 'Verificando DBCompare Connector'}</Text><Pressable onPress={downloadConnector} style={styles.connectorDownload} accessibilityLabel="Baixar DBCompare Connector"><Text style={styles.connectorDownloadText}>↓</Text></Pressable></Animated.View><Animated.View style={[styles.sideStatus, firestoreOnline === false && { opacity: firestorePulse }]}><View style={[styles.dot, firestoreOnline === false && styles.dotOffline, firestoreOnline === null && styles.dotWaiting]} /><Text style={[styles.statusText, firestoreOnline === false && styles.statusTextOffline, firestoreOnline === null && styles.statusTextWaiting]}>{firestoreOnline === false ? 'Firestore indisponível' : firestoreOnline ? 'Firestore conectado' : 'Conectando ao Firestore'}</Text></Animated.View></View></View></View><ScrollView contentContainerStyle={styles.mainContent}>
-    {activeTab === 'users' && <UsersPanel users={users} onSave={saveUser} />}
-    {activeTab === 'compare' ? <View><View style={styles.compareIntro}><View><Text style={styles.sectionTitle}>Comparar Bases</Text><Text style={styles.sectionSubtitle}>Selecione duas conexões para consultar e comparar seus parâmetros e configurações.</Text></View></View>{notice && <NoticeBox notice={notice} />}{loading ? <View style={styles.loading}><ActivityIndicator color="#6558F5" /><Text style={styles.muted}>Buscando conexões…</Text></View> : connections.length === 0 ? <View style={styles.emptyCard}><Text style={styles.emptySymbol}>⌁</Text><Text style={styles.emptyTitle}>Cadastre conexões primeiro</Text><Text style={styles.muted}>A seleção para comparação usa as conexões registradas na aba Conexões.</Text><Pressable onPress={() => setActiveTab('connections')}><Text style={styles.link}>Ir para conexões</Text></Pressable></View> : <><View style={styles.compareLayout}><CompareCard title="Base de Dados 1" subtitle="Primeira base da comparação" selection={leftCompare} connections={connections} onSelect={id => selectForCompare(id, setLeftCompare, leftCompare)} onChange={setLeftCompare} /><View style={styles.compareArrow}><Text style={styles.compareArrowText}>⇄</Text></View><CompareCard title="Base de Dados 2" subtitle="Segunda base da comparação" selection={rightCompare} connections={connections} onSelect={id => selectForCompare(id, setRightCompare, rightCompare)} onChange={setRightCompare} /></View><View style={styles.compareAction}><Pressable style={[styles.primaryButton, comparing && styles.disabled]} onPress={compareBases} disabled={comparing}>{comparing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Comparar Bases</Text>}</Pressable></View>{compareRows && <CompareOutput rows={compareRows} firstName={selectedName(leftCompare.connectionId, 'Origem')} secondName={selectedName(rightCompare.connectionId, 'Destino')} onlyDifferent={onlyDifferent} onOnlyDifferentChange={setOnlyDifferent} filters={resultFilters} onFilterChange={(column, value) => setResultFilters(current => ({ ...current, [column]: value }))} showFilters={showFilters} onToggleFilters={() => setShowFilters(value => !value)} onDescriptionPress={setDescriptionDetail} onExplanationPress={setExplanationDetail} />}</>}</View> : activeTab === 'connections' ? <>
-      <View style={styles.sectionHeader}><View><Text style={styles.sectionTitle}>Conexões cadastradas</Text><Text style={styles.sectionSubtitle}>Gerencie as bases disponíveis para comparação.</Text></View><Pressable style={styles.primaryButton} onPress={startNew}><Text style={styles.primaryText}>+ Nova conexão</Text></Pressable></View>
-      {notice && <NoticeBox notice={notice} />}
-      <View style={styles.card}>{loading ? <View style={styles.loading}><ActivityIndicator color="#6558F5" /><Text style={styles.muted}>Buscando conexões…</Text></View> : connections.length === 0 ? <View style={styles.empty}><Text style={styles.emptySymbol}>⌁</Text><Text style={styles.emptyTitle}>Nenhuma conexão cadastrada</Text><Text style={styles.muted}>Cadastre a primeira base para começar.</Text><Pressable onPress={startNew}><Text style={styles.link}>Cadastrar conexão</Text></Pressable></View> : <ScrollView horizontal><View style={styles.table}><View style={[styles.tableRow, styles.tableHead]}><Text style={[styles.tableHeadText, styles.nameCell]}>CONEXÃO</Text><Text style={[styles.tableHeadText, styles.typeCell]}>TIPO</Text><Text style={[styles.tableHeadText, styles.bankCell]}>BANCO</Text><Text style={[styles.tableHeadText, styles.databaseCell]}>BASE</Text><Text style={[styles.tableHeadText, styles.userCell]}>USUÁRIO</Text><Text style={[styles.tableHeadText, styles.actionCell]}></Text></View>{connections.map(item => <View key={item.id} style={styles.tableRow}><View style={styles.nameCell}><View style={[styles.databaseIcon, { backgroundColor: databaseColor(item.databaseType) }]}><Text style={styles.databaseIconText}>{initials(item.databaseType)}</Text></View><View><Text style={styles.connectionName}>{item.name}</Text><Text style={styles.connectionSub}>{item.host}:{item.port}</Text></View></View><View style={styles.typeCell}><View style={styles.tag}><Text style={styles.tagText}>{item.environmentType || 'Produção'}</Text></View></View><Text style={[styles.cellText, styles.bankCell]}>{databaseLabel(item.databaseType)}</Text><Text style={[styles.cellText, styles.databaseCell]}>{item.database}</Text><Text style={[styles.cellText, styles.userCell]}>{item.username}</Text><View style={[styles.actions, styles.actionCell]}><Pressable onPress={() => edit(item)}><Text style={styles.edit}>Editar</Text></Pressable><Pressable onPress={() => remove(item)}><Text style={styles.delete}>Excluir</Text></Pressable></View></View>)}</View></ScrollView>}</View>
-    </> : null}
-  </ScrollView>
-  <Modal visible={showForm} transparent animationType="fade" onRequestClose={() => setShowForm(false)}><View style={styles.overlay}><ScrollView contentContainerStyle={styles.modalScroll}><View style={styles.modal}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>{editingId ? 'Editar conexão' : 'Nova conexão'}</Text><Text style={styles.modalSubtitle}>As senhas são criptografadas antes de serem guardadas.</Text></View><Pressable onPress={() => setShowForm(false)}><Text style={styles.close}>×</Text></Pressable></View>{notice && <NoticeBox notice={notice} />}<Field label="Nome da conexão"><TextInput style={styles.input} value={form.name} onChangeText={value => update('name', value)} placeholder="Ex.: Produção ERP" placeholderTextColor="#98A2B3" /></Field><Field label="Tipo"><View style={styles.pickerBox}><Picker selectedValue={form.environmentType} onValueChange={(value: EnvironmentType) => update('environmentType', value)}>{environments.map(value => <Picker.Item key={value} label={value} value={value} />)}</Picker></View></Field><Field label="Tipo de banco"><View style={styles.pickerBox}><Picker selectedValue={form.databaseType} onValueChange={(value: DatabaseType) => { update('databaseType', value); update('port', defaultPort[value]); }}>{databaseTypes.map(value => <Picker.Item key={value} label={databaseLabel(value)} value={value} />)}</Picker></View></Field><View style={styles.twoColumns}><View style={styles.flexTwo}><Field label="Host"><TextInput style={styles.input} value={form.host} onChangeText={value => update('host', value)} autoCapitalize="none" placeholder="db.exemplo.com" placeholderTextColor="#98A2B3" /></Field></View><View style={styles.flexOne}><Field label="Porta"><TextInput style={styles.input} value={String(form.port)} onChangeText={value => update('port', Number(value.replace(/\D/g, '')))} keyboardType="numeric" placeholder="5432" placeholderTextColor="#98A2B3" /></Field></View></View><Field label={form.databaseType === 'oracle' ? 'Service name' : 'Base de dados'}><TextInput style={styles.input} value={form.database} onChangeText={value => update('database', value)} autoCapitalize="none" placeholder={form.databaseType === 'oracle' ? 'ORCLPDB1' : 'nome_da_base'} placeholderTextColor="#98A2B3" /></Field><Field label="Usuário"><TextInput style={styles.input} value={form.username} onChangeText={value => update('username', value)} autoCapitalize="none" placeholder="usuario" placeholderTextColor="#98A2B3" /></Field><Field label="Senha"><TextInput style={styles.input} value={form.password} onChangeText={value => update('password', value)} secureTextEntry autoCapitalize="none" placeholder={editingId ? 'Informe apenas para alterar ou testar' : 'Senha do banco'} placeholderTextColor="#98A2B3" /></Field><View style={styles.formActions}><Pressable style={styles.secondaryButton} onPress={test} disabled={saving}>{saving ? <ActivityIndicator color="#4B5563" /> : <Text style={styles.secondaryText}>Testar conexão</Text>}</Pressable><Pressable style={[styles.primaryButton, saving && styles.disabled]} onPress={save} disabled={saving}>{saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Salvar conexão</Text>}</Pressable></View></View></ScrollView></View></Modal>
-  <Modal visible={Boolean(descriptionDetail)} transparent animationType="fade" onRequestClose={() => setDescriptionDetail(null)}><View style={styles.overlay}><View style={styles.detailModal}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Diferença na descrição</Text><Text style={styles.modalSubtitle}>Parâmetro {descriptionDetail?.cdParametro}</Text></View><Pressable onPress={() => setDescriptionDetail(null)}><Text style={styles.close}>×</Text></Pressable></View><Text style={styles.detailLabel}>{selectedName(leftCompare.connectionId, 'Origem')}</Text><Text style={styles.detailText}>{descriptionDetail?.deParametroFirst || '—'}</Text><Text style={styles.detailLabel}>{selectedName(rightCompare.connectionId, 'Destino')}</Text><Text style={styles.detailText}>{descriptionDetail?.deParametroSecond || '—'}</Text></View></View></Modal>
-  <Modal visible={Boolean(explanationDetail)} transparent animationType="fade" onRequestClose={() => setExplanationDetail(null)}><View style={styles.overlay}><ScrollView contentContainerStyle={styles.modalScroll}><View style={styles.detailModal}><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Explicação do parâmetro</Text><Text style={styles.modalSubtitle}>Parâmetro {explanationDetail?.cdParametro}</Text></View><Pressable onPress={() => setExplanationDetail(null)}><Text style={styles.close}>×</Text></Pressable></View><Text style={styles.detailLabel}>{selectedName(leftCompare.connectionId, 'Origem')}</Text><Text style={styles.detailText}>{explanationDetail?.firstExplanation || '—'}</Text><Text style={styles.detailLabel}>{selectedName(rightCompare.connectionId, 'Destino')}</Text><Text style={styles.detailText}>{explanationDetail?.secondExplanation || '—'}</Text></View></ScrollView></View></Modal>
-  </View></View></View>;
+  return (
+    <View style={styles.page}>
+      {theme === "dark" && (
+        <View pointerEvents="none" style={styles.darkLogoOverlay}>
+          <Image
+            source={require("./assets/dbcompare-logo.png")}
+            style={styles.darkLogo}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+      <View nativeID="dbcompare-app" style={styles.page}>
+        <StatusBar style={theme === "dark" ? "light" : "dark"} />
+        <View pointerEvents="none" style={styles.orbOne} />
+        <View pointerEvents="none" style={styles.orbTwo} />
+        <View pointerEvents="none" style={styles.watermarkBlue} />
+        <View pointerEvents="none" style={styles.watermarkGreen} />
+        <View pointerEvents="none" style={styles.watermarkRing} />
+        <View style={styles.appShell}>
+          <View style={styles.sidebar}>
+            <View style={styles.sidebarBrand}>
+              <Image
+                source={require("./assets/dbcompare-logo.png")}
+                style={styles.sidebarLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.sidebarTitle}>DBCompare</Text>
+            </View>
+            <View style={styles.sideTabs}>
+              <Tab
+                text="Comparar Bases"
+                icon="⇄"
+                active={activeTab === "compare"}
+                onPress={() => setActiveTab("compare")}
+              />
+              <Tab
+                text="Conexões"
+                icon="◫"
+                active={activeTab === "connections"}
+                onPress={() => setActiveTab("connections")}
+              />
+              <Tab
+                text="Configurações"
+                icon="⚙"
+                active={activeTab === "settings"}
+                onPress={() => setActiveTab("settings")}
+              />
+              {currentUser.role === "Administrador" && (
+                <Tab
+                  text="Usuários"
+                  icon="♙"
+                  active={activeTab === "users"}
+                  onPress={() => {
+                    setShowUsers(false);
+                    setActiveTab("users");
+                  }}
+                />
+              )}
+            </View>
+            <View style={styles.sidebarFooter}>
+              <View style={styles.userBar}>
+                <View style={styles.userAvatar}>
+                  <Text style={styles.userAvatarText}>
+                    {(currentUser.name || currentUser.username)
+                      .trim()
+                      .charAt(0)
+                      .toLocaleUpperCase()}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setShowUsers(true);
+                    setActiveTab("users");
+                  }}
+                >
+                  <Text style={styles.userName}>{currentUser.username}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={toggleTheme}
+                  style={styles.themeToggle}
+                  accessibilityLabel={
+                    theme === "light"
+                      ? "Ativar tema escuro"
+                      : "Ativar tema claro"
+                  }
+                >
+                  <Text style={styles.themeToggleText}>
+                    {theme === "light" ? "🌙" : "☀️"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={signOut}
+                  style={styles.signOutButton}
+                  accessibilityLabel="Sair"
+                >
+                  <Text style={styles.signOutText}>⏻</Text>
+                </Pressable>
+              </View>
+              <View style={styles.sidebarStatuses}>
+                <Animated.View
+                  style={[
+                    styles.sideStatus,
+                    connectorOnline === false && { opacity: connectorPulse },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.dot,
+                      connectorOnline === false && styles.dotOffline,
+                      connectorOnline === null && styles.dotWaiting,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.statusText,
+                      connectorOnline === false && styles.statusTextOffline,
+                      connectorOnline === null && styles.statusTextWaiting,
+                    ]}
+                  >
+                    {connectorOnline === false
+                      ? "DBCompare Connector indisponível"
+                      : connectorOnline
+                        ? "DBCompare Connector conectado"
+                        : "Verificando DBCompare Connector"}
+                  </Text>
+                  <Pressable
+                    onPress={downloadConnector}
+                    style={styles.connectorDownload}
+                    accessibilityLabel="Baixar DBCompare Connector"
+                  >
+                    <Text style={styles.connectorDownloadText}>↓</Text>
+                  </Pressable>
+                </Animated.View>
+                <Animated.View
+                  style={[
+                    styles.sideStatus,
+                    firestoreOnline === false && { opacity: firestorePulse },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.dot,
+                      firestoreOnline === false && styles.dotOffline,
+                      firestoreOnline === null && styles.dotWaiting,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.statusText,
+                      firestoreOnline === false && styles.statusTextOffline,
+                      firestoreOnline === null && styles.statusTextWaiting,
+                    ]}
+                  >
+                    {firestoreOnline === false
+                      ? "Firestore indisponível"
+                      : firestoreOnline
+                        ? "Firestore conectado"
+                        : "Conectando ao Firestore"}
+                  </Text>
+                </Animated.View>
+              </View>
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={styles.mainContent}>
+            {activeTab === "users" && (
+              <UsersPanel users={users} onSave={saveUser} />
+            )}
+            {activeTab === "settings" && (
+              <SettingsPanel
+                ignoredParameters={ignoredParameters}
+                onSave={saveSettings}
+              />
+            )}
+            {activeTab === "compare" ? (
+              <View>
+                <View style={styles.compareIntro}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Comparar Bases</Text>
+                    <Text style={styles.sectionSubtitle}>
+                      Selecione duas conexões para consultar e comparar seus
+                      parâmetros e configurações.
+                    </Text>
+                  </View>
+                </View>
+                {notice && <NoticeBox notice={notice} />}
+                {loading ? (
+                  <View style={styles.loading}>
+                    <ActivityIndicator color="#6558F5" />
+                    <Text style={styles.muted}>Buscando conexões…</Text>
+                  </View>
+                ) : connections.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptySymbol}>⌁</Text>
+                    <Text style={styles.emptyTitle}>
+                      Cadastre conexões primeiro
+                    </Text>
+                    <Text style={styles.muted}>
+                      A seleção para comparação usa as conexões registradas na
+                      aba Conexões.
+                    </Text>
+                    <Pressable onPress={() => setActiveTab("connections")}>
+                      <Text style={styles.link}>Ir para conexões</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.compareLayout}>
+                      <CompareCard
+                        title="Base de Dados 1"
+                        subtitle="Primeira base da comparação"
+                        selection={leftCompare}
+                        connections={connections}
+                        onSelect={(id) =>
+                          selectForCompare(id, setLeftCompare, leftCompare)
+                        }
+                        onChange={setLeftCompare}
+                      />
+                      <View style={styles.compareArrow}>
+                        <Text style={styles.compareArrowText}>⇄</Text>
+                      </View>
+                      <CompareCard
+                        title="Base de Dados 2"
+                        subtitle="Segunda base da comparação"
+                        selection={rightCompare}
+                        connections={connections}
+                        onSelect={(id) =>
+                          selectForCompare(id, setRightCompare, rightCompare)
+                        }
+                        onChange={setRightCompare}
+                      />
+                    </View>
+                    <View style={styles.compareAction}>
+                      <Pressable
+                        style={[
+                          styles.primaryButton,
+                          comparing && styles.disabled,
+                        ]}
+                        onPress={compareBases}
+                        disabled={comparing}
+                      >
+                        {comparing ? (
+                          <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.primaryText}>Comparar Bases</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                    {compareRows && (
+                      <CompareOutput
+                        rows={compareRows}
+                        firstName={selectedName(
+                          leftCompare.connectionId,
+                          "Origem",
+                        )}
+                        secondName={selectedName(
+                          rightCompare.connectionId,
+                          "Destino",
+                        )}
+                        onlyDifferent={onlyDifferent}
+                        onOnlyDifferentChange={setOnlyDifferent}
+                        filters={resultFilters}
+                        onFilterChange={(column, value) =>
+                          setResultFilters((current) => ({
+                            ...current,
+                            [column]: value,
+                          }))
+                        }
+                        showFilters={showFilters}
+                        onToggleFilters={() =>
+                          setShowFilters((value) => !value)
+                        }
+                        onDescriptionPress={setDescriptionDetail}
+                        onExplanationPress={setExplanationDetail}
+                      />
+                    )}
+                  </>
+                )}
+              </View>
+            ) : activeTab === "connections" ? (
+              <>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>
+                      Conexões cadastradas
+                    </Text>
+                    <Text style={styles.sectionSubtitle}>
+                      Gerencie as bases disponíveis para comparação.
+                    </Text>
+                  </View>
+                  <Pressable style={styles.primaryButton} onPress={startNew}>
+                    <Text style={styles.primaryText}>+ Nova conexão</Text>
+                  </Pressable>
+                </View>
+                {notice && <NoticeBox notice={notice} />}
+                <View style={styles.card}>
+                  {loading ? (
+                    <View style={styles.loading}>
+                      <ActivityIndicator color="#6558F5" />
+                      <Text style={styles.muted}>Buscando conexões…</Text>
+                    </View>
+                  ) : connections.length === 0 ? (
+                    <View style={styles.empty}>
+                      <Text style={styles.emptySymbol}>⌁</Text>
+                      <Text style={styles.emptyTitle}>
+                        Nenhuma conexão cadastrada
+                      </Text>
+                      <Text style={styles.muted}>
+                        Cadastre a primeira base para começar.
+                      </Text>
+                      <Pressable onPress={startNew}>
+                        <Text style={styles.link}>Cadastrar conexão</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <ScrollView horizontal>
+                      <View style={styles.table}>
+                        <View style={[styles.tableRow, styles.tableHead]}>
+                          <Text style={[styles.tableHeadText, styles.nameCell]}>
+                            CONEXÃO
+                          </Text>
+                          <Text style={[styles.tableHeadText, styles.typeCell]}>
+                            TIPO
+                          </Text>
+                          <Text style={[styles.tableHeadText, styles.bankCell]}>
+                            BANCO
+                          </Text>
+                          <Text
+                            style={[styles.tableHeadText, styles.databaseCell]}
+                          >
+                            BASE
+                          </Text>
+                          <Text style={[styles.tableHeadText, styles.userCell]}>
+                            USUÁRIO
+                          </Text>
+                          <Text
+                            style={[styles.tableHeadText, styles.actionCell]}
+                          ></Text>
+                        </View>
+                        {connections.map((item) => (
+                          <View key={item.id} style={styles.tableRow}>
+                            <View style={styles.nameCell}>
+                              <View
+                                style={[
+                                  styles.databaseIcon,
+                                  {
+                                    backgroundColor: databaseColor(
+                                      item.databaseType,
+                                    ),
+                                  },
+                                ]}
+                              >
+                                <Text style={styles.databaseIconText}>
+                                  {initials(item.databaseType)}
+                                </Text>
+                              </View>
+                              <View>
+                                <Text style={styles.connectionName}>
+                                  {item.name}
+                                </Text>
+                                <Text style={styles.connectionSub}>
+                                  {item.host}:{item.port}
+                                </Text>
+                              </View>
+                            </View>
+                            <View style={styles.typeCell}>
+                              <View style={styles.tag}>
+                                <Text style={styles.tagText}>
+                                  {item.environmentType || "Produção"}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.cellText, styles.bankCell]}>
+                              {databaseLabel(item.databaseType)}
+                            </Text>
+                            <Text
+                              style={[styles.cellText, styles.databaseCell]}
+                            >
+                              {item.database}
+                            </Text>
+                            <Text style={[styles.cellText, styles.userCell]}>
+                              {item.username}
+                            </Text>
+                            <View style={[styles.actions, styles.actionCell]}>
+                              <Pressable onPress={() => edit(item)}>
+                                <Text style={styles.edit}>Editar</Text>
+                              </Pressable>
+                              <Pressable onPress={() => remove(item)}>
+                                <Text style={styles.delete}>Excluir</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  )}
+                </View>
+              </>
+            ) : null}
+          </ScrollView>
+          <Modal
+            visible={showForm}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowForm(false)}
+          >
+            <View style={styles.overlay}>
+              <ScrollView contentContainerStyle={styles.modalScroll}>
+                <View style={styles.modal}>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalTitle}>
+                        {editingId ? "Editar conexão" : "Nova conexão"}
+                      </Text>
+                      <Text style={styles.modalSubtitle}>
+                        As senhas são criptografadas antes de serem guardadas.
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => setShowForm(false)}>
+                      <Text style={styles.close}>×</Text>
+                    </Pressable>
+                  </View>
+                  {notice && <NoticeBox notice={notice} />}
+                  <Field label="Nome da conexão">
+                    <TextInput
+                      style={styles.input}
+                      value={form.name}
+                      onChangeText={(value) => update("name", value)}
+                      placeholder="Ex.: Produção ERP"
+                      placeholderTextColor="#98A2B3"
+                    />
+                  </Field>
+                  <Field label="Tipo">
+                    <View style={styles.pickerBox}>
+                      <Picker
+                        selectedValue={form.environmentType}
+                        onValueChange={(value: EnvironmentType) =>
+                          update("environmentType", value)
+                        }
+                      >
+                        {environments.map((value) => (
+                          <Picker.Item
+                            key={value}
+                            label={value}
+                            value={value}
+                          />
+                        ))}
+                      </Picker>
+                    </View>
+                  </Field>
+                  <Field label="Tipo de banco">
+                    <View style={styles.pickerBox}>
+                      <Picker
+                        selectedValue={form.databaseType}
+                        onValueChange={(value: DatabaseType) => {
+                          update("databaseType", value);
+                          update("port", defaultPort[value]);
+                        }}
+                      >
+                        {databaseTypes.map((value) => (
+                          <Picker.Item
+                            key={value}
+                            label={databaseLabel(value)}
+                            value={value}
+                          />
+                        ))}
+                      </Picker>
+                    </View>
+                  </Field>
+                  <View style={styles.twoColumns}>
+                    <View style={styles.flexTwo}>
+                      <Field label="Host">
+                        <TextInput
+                          style={styles.input}
+                          value={form.host}
+                          onChangeText={(value) => update("host", value)}
+                          autoCapitalize="none"
+                          placeholder="db.exemplo.com"
+                          placeholderTextColor="#98A2B3"
+                        />
+                      </Field>
+                    </View>
+                    <View style={styles.flexOne}>
+                      <Field label="Porta">
+                        <TextInput
+                          style={styles.input}
+                          value={String(form.port)}
+                          onChangeText={(value) =>
+                            update("port", Number(value.replace(/\D/g, "")))
+                          }
+                          keyboardType="numeric"
+                          placeholder="5432"
+                          placeholderTextColor="#98A2B3"
+                        />
+                      </Field>
+                    </View>
+                  </View>
+                  <Field
+                    label={
+                      form.databaseType === "oracle"
+                        ? "Service name"
+                        : "Base de dados"
+                    }
+                  >
+                    <TextInput
+                      style={styles.input}
+                      value={form.database}
+                      onChangeText={(value) => update("database", value)}
+                      autoCapitalize="none"
+                      placeholder={
+                        form.databaseType === "oracle"
+                          ? "ORCLPDB1"
+                          : "nome_da_base"
+                      }
+                      placeholderTextColor="#98A2B3"
+                    />
+                  </Field>
+                  <Field label="Usuário">
+                    <TextInput
+                      style={styles.input}
+                      value={form.username}
+                      onChangeText={(value) => update("username", value)}
+                      autoCapitalize="none"
+                      placeholder="usuario"
+                      placeholderTextColor="#98A2B3"
+                    />
+                  </Field>
+                  <Field label="Senha">
+                    <TextInput
+                      style={styles.input}
+                      value={form.password}
+                      onChangeText={(value) => update("password", value)}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      placeholder={
+                        editingId
+                          ? "Informe apenas para alterar ou testar"
+                          : "Senha do banco"
+                      }
+                      placeholderTextColor="#98A2B3"
+                    />
+                  </Field>
+                  <View style={styles.formActions}>
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={test}
+                      disabled={saving}
+                    >
+                      {saving ? (
+                        <ActivityIndicator color="#4B5563" />
+                      ) : (
+                        <Text style={styles.secondaryText}>Testar conexão</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[styles.primaryButton, saving && styles.disabled]}
+                      onPress={save}
+                      disabled={saving}
+                    >
+                      {saving ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.primaryText}>Salvar conexão</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              </ScrollView>
+            </View>
+          </Modal>
+          <Modal
+            visible={Boolean(descriptionDetail)}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setDescriptionDetail(null)}
+          >
+            <View style={styles.overlay}>
+              <View style={styles.detailModal}>
+                <View style={styles.modalHeader}>
+                  <View>
+                    <Text style={styles.modalTitle}>
+                      Diferença na descrição
+                    </Text>
+                    <Text style={styles.modalSubtitle}>
+                      Parâmetro {descriptionDetail?.cdParametro}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => setDescriptionDetail(null)}>
+                    <Text style={styles.close}>×</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.detailLabel}>
+                  {selectedName(leftCompare.connectionId, "Origem")}
+                </Text>
+                <Text style={styles.detailText}>
+                  {descriptionDetail?.deParametroFirst || "—"}
+                </Text>
+                <Text style={styles.detailLabel}>
+                  {selectedName(rightCompare.connectionId, "Destino")}
+                </Text>
+                <Text style={styles.detailText}>
+                  {descriptionDetail?.deParametroSecond || "—"}
+                </Text>
+              </View>
+            </View>
+          </Modal>
+          <Modal
+            visible={Boolean(explanationDetail)}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setExplanationDetail(null)}
+          >
+            <View style={styles.overlay}>
+              <ScrollView contentContainerStyle={styles.modalScroll}>
+                <View style={styles.detailModal}>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalTitle}>
+                        Explicação do parâmetro
+                      </Text>
+                      <Text style={styles.modalSubtitle}>
+                        Parâmetro {explanationDetail?.cdParametro}
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => setExplanationDetail(null)}>
+                      <Text style={styles.close}>×</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.detailLabel}>
+                    {selectedName(leftCompare.connectionId, "Origem")}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    {explanationDetail?.firstExplanation || "—"}
+                  </Text>
+                  <Text style={styles.detailLabel}>
+                    {selectedName(rightCompare.connectionId, "Destino")}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    {explanationDetail?.secondExplanation || "—"}
+                  </Text>
+                </View>
+              </ScrollView>
+            </View>
+          </Modal>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 const darkLogoStyles = StyleSheet.create({
-  overlay: { position: 'absolute', top: 22, left: 22, zIndex: 10, width: 164, height: 130, borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 16, overflow: 'hidden', backgroundColor: '#071D3A' },
+  overlay: {
+    position: "absolute",
+    top: 22,
+    left: 22,
+    zIndex: 10,
+    width: 164,
+    height: 130,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#071D3A",
+  },
   image: { width: 160, height: 126 },
 });
 
-const styles = StyleSheet.create(Object.assign({
-  darkLogoOverlay: darkLogoStyles.overlay,
-  darkLogo: darkLogoStyles.image,
-  signOutButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  signOutText: { color: '#B42318', fontSize: 20, fontWeight: '800', lineHeight: 23 },
-  profileModal: { maxWidth: 560 },
-  passwordLine: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  passwordInput: { flex: 1 },
-  passwordModal: { maxWidth: 480, alignSelf: 'center', marginTop: 'auto', marginBottom: 'auto' },
-  profileSuccess: { color: '#027A48', backgroundColor: '#ECFDF3', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 14 },
-  usersPage: { width: '100%' },
-  usersListPanel: { width: 330, maxHeight: 540 },
-  userFormPanel: { flex: 1, padding: 22 },
-  fullPicker: { width: '100%', height: '100%', color: '#172033', backgroundColor: 'transparent' },
-  loginPage: { flex: 1, minHeight: '100%', backgroundColor: '#F4F7FC', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  loginCard: { width: '100%', maxWidth: 430, backgroundColor: '#FFFFFF', borderRadius: 22, padding: 30, borderWidth: 1, borderColor: '#E4EAF3', shadowColor: '#0B1F3A', shadowOpacity: .12, shadowRadius: 28, shadowOffset: { width: 0, height: 12 } },
-  loginLogo: { width: 160, height: 126, alignSelf: 'center', marginBottom: 12 },
-  loginTitle: { color: '#172033', fontSize: 23, fontWeight: '800', textAlign: 'center' },
-  loginSubtitle: { color: '#667085', fontSize: 14, textAlign: 'center', lineHeight: 20, marginTop: 8, marginBottom: 24 },
-  loginError: { color: '#B42318', backgroundColor: '#FEF3F2', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 14 },
-  usersModal: { maxWidth: 940 },
-  usersLayout: { flexDirection: 'row', gap: 24 },
-  usersList: { width: 320, gap: 12 },
-  userListItem: { paddingVertical: 12, paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: '#EAECF0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  userListItemActive: { backgroundColor: '#F4F3FF', borderRadius: 8 },
-  userState: { color: '#027A48', fontSize: 11, fontWeight: '800' },
-  userStateInactive: { color: '#B42318' },
-  userForm: { flex: 1 },
-  userFormTitle: { color: '#172033', fontSize: 17, fontWeight: '800', marginBottom: 16 },
-  activeLine: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  explanationResult: { width: 120, justifyContent: 'center' }, ellipsisButton: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: '#F2F4F7' }, ellipsisText: { color: '#475467', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
-  resultControls: { flexDirection: 'row', alignItems: 'center', gap: 14 }, excelButton: { width: 38, height: 34, borderRadius: 7, backgroundColor: '#107C41', alignItems: 'center', justifyContent: 'center' }, excelText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' }, checkboxLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, checkbox: { width: 18, height: 18, borderRadius: 4, borderColor: '#98A2B3', borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }, checkboxChecked: { backgroundColor: '#6558F5', borderColor: '#6558F5' }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' }, checkboxText: { color: '#475467', fontSize: 13, fontWeight: '600' }, statusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, filterButton: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EAECF0' }, filterIcon: { color: '#475467', fontSize: 17, fontWeight: '900' }, filterRow: { backgroundColor: '#F9FAFB', minHeight: 54 }, filterInput: { borderColor: '#D0D5DD', borderWidth: 1, borderRadius: 6, height: 33, paddingHorizontal: 8, color: '#344054', fontSize: 12, backgroundColor: '#FFFFFF' }, noResults: { minHeight: 64, justifyContent: 'center', alignItems: 'center', borderTopColor: '#EAECF0', borderTopWidth: 1 },
-  compareAction: { alignItems: 'center', marginVertical: 22 }, resultsCard: { backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: 16, overflow: 'hidden', shadowColor: '#101828', shadowOpacity: .06, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }, resultsHeading: { padding: 22, borderBottomColor: '#EAECF0', borderBottomWidth: 1 }, resultsTable: { minWidth: 1000, width: '100%' }, resultRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', borderTopColor: '#EAECF0', borderTopWidth: 1, paddingHorizontal: 20 }, resultHead: { minHeight: 42, borderTopWidth: 0, backgroundColor: '#F9FAFB' }, codeResult: { width: 130 }, descriptionResult: { width: 290, justifyContent: 'center' }, valueResult: { width: 220 }, statusResult: { width: 160, justifyContent: 'center' }, descriptionLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, warning: { width: 19, height: 19, borderRadius: 10, backgroundColor: '#FEC84B', alignItems: 'center', justifyContent: 'center' }, warningText: { color: '#694000', fontSize: 13, fontWeight: '900' }, resultTag: { alignSelf: 'flex-start', paddingVertical: 5, paddingHorizontal: 9, borderRadius: 999 }, resultTagEqual: { backgroundColor: '#ECFDF3' }, resultTagDifferent: { backgroundColor: '#FEF3F2' }, resultTagText: { fontSize: 11, fontWeight: '700' }, resultTagTextEqual: { color: '#027A48' }, resultTagTextDifferent: { color: '#B42318' }, detailModal: { width: '90%', maxWidth: 520, alignSelf: 'center', marginTop: 'auto', marginBottom: 'auto', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 26, shadowColor: '#101828', shadowOpacity: .25, shadowRadius: 30, shadowOffset: { width: 0, height: 15 } }, detailLabel: { color: '#667085', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: .5, marginTop: 10, marginBottom: 5 }, detailText: { color: '#172033', fontSize: 15, lineHeight: 22, padding: 12, backgroundColor: '#F9FAFB', borderRadius: 8 },
-  compareIntro: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, gap: 16 }, constructionBadge: { backgroundColor: '#F4F3FF', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 }, constructionBadgeText: { color: '#5546CB', fontSize: 12, fontWeight: '700' }, compareLayout: { flexDirection: 'row', alignItems: 'center', gap: 16 }, compareCard: { flex: 1, backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: 16, padding: 22, shadowColor: '#101828', shadowOpacity: .05, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } }, compactCompareCard: { padding: 18 }, compareCardTitle: { color: '#172033', fontSize: 17, fontWeight: '800' }, compareCardSubtitle: { color: '#667085', fontSize: 13, marginTop: 5, marginBottom: 20 }, compactCompareCardSubtitle: { marginBottom: 14 }, compactField: { marginBottom: 9 }, connectionPickerBox: { backgroundColor: '#FFFFFF' }, connectionPicker: { width: '100%', height: '100%', borderWidth: 0, backgroundColor: 'transparent', color: '#172033', fontSize: 14 }, compareArrow: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#EEEDFE', alignItems: 'center', justifyContent: 'center' }, compareArrowText: { color: '#6558F5', fontSize: 22, fontWeight: '800' }, emptyCard: { alignItems: 'center', paddingVertical: 56, backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: 16, gap: 8 }, dotOffline: { backgroundColor: '#D92D20' }, statusTextOffline: { color: '#B42318' }, dotWaiting: { backgroundColor: '#F79009' }, statusTextWaiting: { color: '#B54708' },
-  page: { flex: 1, minHeight: '100%', backgroundColor: '#F7F8FC' }, content: { width: '100%', maxWidth: 1160, alignSelf: 'center', padding: 32, paddingBottom: 64 }, orbOne: { position: 'absolute', width: 450, height: 450, borderRadius: 999, backgroundColor: '#ECEAFF', top: -230, right: -170 }, orbTwo: { position: 'absolute', width: 340, height: 340, borderRadius: 999, backgroundColor: '#E3F6F0', bottom: -120, left: -180 }, brand: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }, eyebrow: { fontSize: 12, fontWeight: '800', letterSpacing: 1.8, color: '#6558F5', marginBottom: 7 }, title: { fontSize: 32, fontWeight: '800', color: '#172033', letterSpacing: -1 }, status: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 8, paddingHorizontal: 11, borderRadius: 999, backgroundColor: '#ECFDF3' }, dot: { width: 7, height: 7, borderRadius: 7, backgroundColor: '#12B76A' }, statusText: { color: '#027A48', fontSize: 12, fontWeight: '700' }, tabs: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#EAECF0', borderRadius: 10, padding: 4, marginBottom: 28 }, tab: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 7 }, tabActive: { backgroundColor: '#FFFFFF', shadowColor: '#101828', shadowOpacity: .08, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 }, tabText: { color: '#667085', fontWeight: '700', fontSize: 14 }, tabTextActive: { color: '#4238B8' }, construction: { backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: 18, padding: 56, alignItems: 'center', shadowColor: '#101828', shadowOpacity: .05, shadowRadius: 20, shadowOffset: { width: 0, height: 8 } }, constructionIcon: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#EEEDFE', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }, constructionSymbol: { color: '#6558F5', fontSize: 31, fontWeight: '700' }, constructionTitle: { color: '#172033', fontWeight: '800', fontSize: 22 }, constructionText: { color: '#6558F5', fontWeight: '800', fontSize: 15, marginTop: 9 }, constructionDescription: { color: '#667085', fontSize: 14, textAlign: 'center', maxWidth: 430, lineHeight: 21, marginTop: 9 }, sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, gap: 20 }, sectionTitle: { fontSize: 21, color: '#172033', fontWeight: '800' }, sectionSubtitle: { color: '#667085', fontSize: 14, marginTop: 5 }, primaryButton: { backgroundColor: '#6558F5', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', minHeight: 48 }, primaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' }, card: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: 16, overflow: 'hidden', shadowColor: '#101828', shadowOpacity: .06, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 }, table: { minWidth: 970, width: '100%' }, tableRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EAECF0', paddingHorizontal: 20 }, tableHead: { backgroundColor: '#F9FAFB', borderTopWidth: 0, minHeight: 42 }, tableHeadText: { color: '#667085', fontSize: 11, fontWeight: '800', letterSpacing: .4 }, nameCell: { width: 230, flexDirection: 'row', alignItems: 'center', gap: 11 }, typeCell: { width: 150, justifyContent: 'center' }, bankCell: { width: 130 }, databaseCell: { width: 230 }, userCell: { width: 140 }, actionCell: { width: 140 }, databaseIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, databaseIconText: { color: '#344054', fontWeight: '800', fontSize: 11 }, connectionName: { color: '#172033', fontWeight: '700', fontSize: 14 }, connectionSub: { color: '#98A2B3', fontSize: 12, marginTop: 2 }, cellText: { color: '#475467', fontSize: 13 }, tag: { alignSelf: 'flex-start', backgroundColor: '#F4F3FF', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999 }, tagText: { fontSize: 11, color: '#5546CB', fontWeight: '700' }, actions: { flexDirection: 'row', gap: 13 }, edit: { color: '#6558F5', fontSize: 13, fontWeight: '700' }, delete: { color: '#D92D20', fontSize: 13, fontWeight: '700' }, empty: { alignItems: 'center', paddingVertical: 56, gap: 8 }, emptySymbol: { fontSize: 32, color: '#6558F5' }, emptyTitle: { color: '#344054', fontWeight: '700', fontSize: 16 }, muted: { color: '#667085', fontSize: 14 }, link: { color: '#6558F5', fontWeight: '700', marginTop: 8 }, loading: { paddingVertical: 50, alignItems: 'center', gap: 12 }, notice: { borderRadius: 10, padding: 14, marginBottom: 18, borderWidth: 1 }, noticeSuccess: { backgroundColor: '#ECFDF3', borderColor: '#ABEFC6' }, noticeError: { backgroundColor: '#FEF3F2', borderColor: '#FECDCA' }, noticeTitle: { fontWeight: '700', color: '#344054', marginBottom: 3 }, noticeText: { color: '#475467', fontSize: 13, lineHeight: 19 }, overlay: { flex: 1, backgroundColor: 'rgba(16,24,40,.46)' }, modalScroll: { flexGrow: 1, justifyContent: 'center', padding: 20 }, modal: { backgroundColor: '#fff', width: '100%', maxWidth: 650, alignSelf: 'center', padding: 26, borderRadius: 18, shadowColor: '#101828', shadowOpacity: .2, shadowRadius: 30, shadowOffset: { width: 0, height: 15 } }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 }, modalTitle: { color: '#172033', fontSize: 22, fontWeight: '800' }, modalSubtitle: { color: '#667085', fontSize: 13, marginTop: 5 }, close: { fontSize: 30, lineHeight: 28, color: '#667085' }, field: { marginBottom: 15 }, label: { color: '#344054', fontSize: 13, fontWeight: '700', marginBottom: 7 }, input: { borderColor: '#D0D5DD', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, height: 46, color: '#172033', fontSize: 15, backgroundColor: '#FFF' }, pickerBox: { borderColor: '#D0D5DD', borderWidth: 1, borderRadius: 8, height: 46, overflow: 'hidden', justifyContent: 'center' }, twoColumns: { flexDirection: 'row', gap: 12 }, flexTwo: { flex: 2 }, flexOne: { flex: 1 }, formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 12 }, secondaryButton: { borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, paddingHorizontal: 18, minHeight: 48, justifyContent: 'center', alignItems: 'center' }, secondaryText: { color: '#344054', fontSize: 14, fontWeight: '700' }, disabled: { opacity: .6 }
-}, { page: { flex: 1, backgroundColor: '#F7F8FC' }, appShell: { flex: 1, flexDirection: 'row', minHeight: '100%' }, watermarkBlue: { position: 'absolute', width: 560, height: 560, borderRadius: 280, borderWidth: 54, borderColor: 'rgba(56, 137, 238, 0.055)', top: 180, right: -360 }, watermarkGreen: { position: 'absolute', width: 440, height: 440, borderRadius: 220, backgroundColor: 'rgba(100, 196, 119, 0.045)', bottom: 60, right: 120 }, watermarkRing: { position: 'absolute', width: 330, height: 330, borderRadius: 165, borderWidth: 26, borderColor: 'rgba(76, 177, 228, 0.045)', top: 430, left: 170 }, sidebar: { width: 240, backgroundColor: '#FFFFFF', borderRightWidth: 1, borderRightColor: '#EAECF0', padding: 24, justifyContent: 'space-between' }, sidebarBrand: { gap: 7 }, sidebarLogo: { width: 160, height: 126, alignSelf: 'flex-start' }, sidebarTitle: { color: '#172033', fontSize: 20, fontWeight: '800' }, sideTabs: { gap: 8, marginTop: 26, flex: 1 }, sideTab: { width: '100%', paddingVertical: 12, paddingHorizontal: 13, alignItems: 'flex-start', backgroundColor: 'transparent' }, sideTabActive: { backgroundColor: '#EEEDFE', shadowOpacity: 0, elevation: 0 }, sidebarFooter: { gap: 16 }, userBar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 10, backgroundColor: '#F9FAFB' }, userAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E4EEFF' }, userAvatarText: { color: '#315FA6', fontSize: 12, fontWeight: '800' }, userName: { flex: 1, color: '#344054', fontSize: 13, fontWeight: '700' }, themeToggle: { width: 30, height: 30, borderRadius: 8, backgroundColor: '#EEEDFE', alignItems: 'center', justifyContent: 'center' }, themeToggleText: { color: '#5546CB', fontSize: 18, lineHeight: 21, fontWeight: '800' }, sidebarStatuses: { gap: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#EAECF0' }, sideStatus: { flexDirection: 'row', alignItems: 'center', gap: 7 }, statusText: { flex: 1 }, connectorDownload: { width: 27, height: 27, borderRadius: 7, backgroundColor: '#EEEDFE', alignItems: 'center', justifyContent: 'center' }, connectorDownloadText: { color: '#5546CB', fontSize: 18, fontWeight: '900', lineHeight: 21 }, mainContent: { width: '100%', maxWidth: 1260, alignSelf: 'center', padding: 34, paddingBottom: 64 }, input: { height: 40, borderColor: '#D0D5DD', borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, color: '#172033', fontSize: 14, backgroundColor: '#FFF' }, pickerBox: { width: '100%', height: 40, borderColor: '#D0D5DD', borderWidth: 1, borderRadius: 8, overflow: 'hidden', justifyContent: 'center', backgroundColor: '#FFF' }, resultControls: { flexDirection: 'row-reverse', alignItems: 'center', gap: 14 }, resultsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 20, padding: 22, borderBottomColor: '#EAECF0', borderBottomWidth: 1 }, compareSubtabs: { flexDirection: 'row', gap: 6, borderBottomWidth: 1, borderBottomColor: '#EAECF0', marginBottom: 18 }, compareSubtab: { paddingVertical: 11, paddingHorizontal: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' }, compareSubtabActive: { borderBottomColor: '#6558F5' }, compareSubtabText: { color: '#667085', fontSize: 13, fontWeight: '700' }, compareSubtabTextActive: { color: '#5546CB' }, constructionPanel: { minHeight: 370, backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center', padding: 32 }, constructionImage: { width: 180, height: 180, marginBottom: 10 }, constructionTitle: { color: '#172033', fontWeight: '800', fontSize: 19 }, constructionText: { color: '#6558F5', fontWeight: '800', fontSize: 14, marginTop: 7 } }) as any);
+const styles = StyleSheet.create(
+  Object.assign(
+    {
+      darkLogoOverlay: darkLogoStyles.overlay,
+      darkLogo: darkLogoStyles.image,
+      signOutButton: {
+        width: 28,
+        height: 28,
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      signOutText: {
+        color: "#B42318",
+        fontSize: 20,
+        fontWeight: "800",
+        lineHeight: 23,
+      },
+      profileModal: { maxWidth: 560 },
+      passwordLine: { flexDirection: "row", alignItems: "center", gap: 10 },
+      passwordInput: { flex: 1 },
+      passwordModal: {
+        maxWidth: 480,
+        alignSelf: "center",
+        marginTop: "auto",
+        marginBottom: "auto",
+      },
+      profileSuccess: {
+        color: "#027A48",
+        backgroundColor: "#ECFDF3",
+        borderRadius: 8,
+        padding: 10,
+        fontSize: 13,
+        marginBottom: 14,
+      },
+      usersPage: { width: "100%" },
+      usersListPanel: { width: 330, maxHeight: 540 },
+      userFormPanel: { flex: 1, padding: 22 },
+      fullPicker: {
+        width: "100%",
+        height: "100%",
+        color: "#172033",
+        backgroundColor: "transparent",
+      },
+      loginPage: {
+        flex: 1,
+        minHeight: "100%",
+        backgroundColor: "#F4F7FC",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      },
+      loginCard: {
+        width: "100%",
+        maxWidth: 430,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 22,
+        padding: 30,
+        borderWidth: 1,
+        borderColor: "#E4EAF3",
+        shadowColor: "#0B1F3A",
+        shadowOpacity: 0.12,
+        shadowRadius: 28,
+        shadowOffset: { width: 0, height: 12 },
+      },
+      loginLogo: {
+        width: 160,
+        height: 126,
+        alignSelf: "center",
+        marginBottom: 12,
+      },
+      loginTitle: {
+        color: "#172033",
+        fontSize: 23,
+        fontWeight: "800",
+        textAlign: "center",
+      },
+      loginSubtitle: {
+        color: "#667085",
+        fontSize: 14,
+        textAlign: "center",
+        lineHeight: 20,
+        marginTop: 8,
+        marginBottom: 24,
+      },
+      loginError: {
+        color: "#B42318",
+        backgroundColor: "#FEF3F2",
+        borderRadius: 8,
+        padding: 10,
+        fontSize: 13,
+        marginBottom: 14,
+      },
+      usersModal: { maxWidth: 940 },
+      usersLayout: { flexDirection: "row", gap: 24 },
+      usersList: { width: 320, gap: 12 },
+      userListItem: {
+        paddingVertical: 12,
+        paddingHorizontal: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: "#EAECF0",
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8,
+      },
+      userListItemActive: { backgroundColor: "#F4F3FF", borderRadius: 8 },
+      userState: { color: "#027A48", fontSize: 11, fontWeight: "800" },
+      userStateInactive: { color: "#B42318" },
+      userForm: { flex: 1 },
+      userFormTitle: {
+        color: "#172033",
+        fontSize: 17,
+        fontWeight: "800",
+        marginBottom: 16,
+      },
+      activeLine: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 16,
+      },
+      explanationResult: { width: 120, justifyContent: "center" },
+      ellipsisButton: {
+        alignSelf: "flex-start",
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 6,
+        backgroundColor: "#F2F4F7",
+      },
+      ellipsisText: {
+        color: "#475467",
+        fontSize: 14,
+        fontWeight: "900",
+        letterSpacing: 1,
+      },
+      resultControls: { flexDirection: "row", alignItems: "center", gap: 14 },
+      excelButton: {
+        width: 38,
+        height: 34,
+        borderRadius: 7,
+        backgroundColor: "#107C41",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      excelText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
+      checkboxLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+      checkbox: {
+        width: 18,
+        height: 18,
+        borderRadius: 4,
+        borderColor: "#98A2B3",
+        borderWidth: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#FFFFFF",
+      },
+      checkboxChecked: { backgroundColor: "#6558F5", borderColor: "#6558F5" },
+      checkmark: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+      checkboxText: { color: "#475467", fontSize: 13, fontWeight: "600" },
+      statusHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      },
+      filterButton: {
+        width: 28,
+        height: 28,
+        borderRadius: 6,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#EAECF0",
+      },
+      filterIcon: { color: "#475467", fontSize: 17, fontWeight: "900" },
+      filterRow: { backgroundColor: "#F9FAFB", minHeight: 54 },
+      filterInput: {
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 6,
+        height: 33,
+        paddingHorizontal: 8,
+        color: "#344054",
+        fontSize: 12,
+        backgroundColor: "#FFFFFF",
+      },
+      noResults: {
+        minHeight: 64,
+        justifyContent: "center",
+        alignItems: "center",
+        borderTopColor: "#EAECF0",
+        borderTopWidth: 1,
+      },
+      compareAction: { alignItems: "center", marginVertical: 22 },
+      resultsCard: {
+        backgroundColor: "#FFFFFF",
+        borderColor: "#EAECF0",
+        borderWidth: 1,
+        borderRadius: 16,
+        overflow: "hidden",
+        shadowColor: "#101828",
+        shadowOpacity: 0.06,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 2,
+      },
+      resultsHeading: {
+        padding: 22,
+        borderBottomColor: "#EAECF0",
+        borderBottomWidth: 1,
+      },
+      resultsTable: { minWidth: 1000, width: "100%" },
+      resultRow: {
+        minHeight: 58,
+        flexDirection: "row",
+        alignItems: "center",
+        borderTopColor: "#EAECF0",
+        borderTopWidth: 1,
+        paddingHorizontal: 20,
+      },
+      resultHead: {
+        minHeight: 42,
+        borderTopWidth: 0,
+        backgroundColor: "#F9FAFB",
+      },
+      codeResult: { width: 130 },
+      descriptionResult: { width: 290, justifyContent: "center" },
+      valueResult: { width: 220 },
+      statusResult: { width: 160, justifyContent: "center" },
+      descriptionLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+      warning: {
+        width: 19,
+        height: 19,
+        borderRadius: 10,
+        backgroundColor: "#FEC84B",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      warningText: { color: "#694000", fontSize: 13, fontWeight: "900" },
+      resultTag: {
+        alignSelf: "flex-start",
+        paddingVertical: 5,
+        paddingHorizontal: 9,
+        borderRadius: 999,
+      },
+      resultTagEqual: { backgroundColor: "#ECFDF3" },
+      resultTagDifferent: { backgroundColor: "#FEF3F2" },
+      resultTagText: { fontSize: 11, fontWeight: "700" },
+      resultTagTextEqual: { color: "#027A48" },
+      resultTagTextDifferent: { color: "#B42318" },
+      detailModal: {
+        width: "90%",
+        maxWidth: 520,
+        alignSelf: "center",
+        marginTop: "auto",
+        marginBottom: "auto",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        padding: 26,
+        shadowColor: "#101828",
+        shadowOpacity: 0.25,
+        shadowRadius: 30,
+        shadowOffset: { width: 0, height: 15 },
+      },
+      detailLabel: {
+        color: "#667085",
+        fontSize: 12,
+        fontWeight: "800",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        marginTop: 10,
+        marginBottom: 5,
+      },
+      detailText: {
+        color: "#172033",
+        fontSize: 15,
+        lineHeight: 22,
+        padding: 12,
+        backgroundColor: "#F9FAFB",
+        borderRadius: 8,
+      },
+      compareIntro: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 18,
+        gap: 16,
+      },
+      constructionBadge: {
+        backgroundColor: "#F4F3FF",
+        borderRadius: 999,
+        paddingHorizontal: 11,
+        paddingVertical: 7,
+      },
+      constructionBadgeText: {
+        color: "#5546CB",
+        fontSize: 12,
+        fontWeight: "700",
+      },
+      compareLayout: { flexDirection: "row", alignItems: "center", gap: 16 },
+      compareCard: {
+        flex: 1,
+        backgroundColor: "#FFFFFF",
+        borderColor: "#EAECF0",
+        borderWidth: 1,
+        borderRadius: 16,
+        padding: 22,
+        shadowColor: "#101828",
+        shadowOpacity: 0.05,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      compactCompareCard: { padding: 18 },
+      compareCardTitle: { color: "#172033", fontSize: 17, fontWeight: "800" },
+      compareCardSubtitle: {
+        color: "#667085",
+        fontSize: 13,
+        marginTop: 5,
+        marginBottom: 20,
+      },
+      compactCompareCardSubtitle: { marginBottom: 14 },
+      compactField: { marginBottom: 9 },
+      connectionPickerBox: { backgroundColor: "#FFFFFF" },
+      connectionPicker: {
+        width: "100%",
+        height: "100%",
+        borderWidth: 0,
+        backgroundColor: "transparent",
+        color: "#172033",
+        fontSize: 14,
+      },
+      compareArrow: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        backgroundColor: "#EEEDFE",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      compareArrowText: { color: "#6558F5", fontSize: 22, fontWeight: "800" },
+      emptyCard: {
+        alignItems: "center",
+        paddingVertical: 56,
+        backgroundColor: "#FFFFFF",
+        borderColor: "#EAECF0",
+        borderWidth: 1,
+        borderRadius: 16,
+        gap: 8,
+      },
+      dotOffline: { backgroundColor: "#D92D20" },
+      statusTextOffline: { color: "#B42318" },
+      dotWaiting: { backgroundColor: "#F79009" },
+      statusTextWaiting: { color: "#B54708" },
+      page: { flex: 1, minHeight: "100%", backgroundColor: "#F7F8FC" },
+      content: {
+        width: "100%",
+        maxWidth: 1160,
+        alignSelf: "center",
+        padding: 32,
+        paddingBottom: 64,
+      },
+      orbOne: {
+        position: "absolute",
+        width: 450,
+        height: 450,
+        borderRadius: 999,
+        backgroundColor: "#ECEAFF",
+        top: -230,
+        right: -170,
+      },
+      orbTwo: {
+        position: "absolute",
+        width: 340,
+        height: 340,
+        borderRadius: 999,
+        backgroundColor: "#E3F6F0",
+        bottom: -120,
+        left: -180,
+      },
+      brand: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 30,
+      },
+      eyebrow: {
+        fontSize: 12,
+        fontWeight: "800",
+        letterSpacing: 1.8,
+        color: "#6558F5",
+        marginBottom: 7,
+      },
+      title: {
+        fontSize: 32,
+        fontWeight: "800",
+        color: "#172033",
+        letterSpacing: -1,
+      },
+      status: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+        paddingVertical: 8,
+        paddingHorizontal: 11,
+        borderRadius: 999,
+        backgroundColor: "#ECFDF3",
+      },
+      dot: { width: 7, height: 7, borderRadius: 7, backgroundColor: "#12B76A" },
+      statusText: { color: "#027A48", fontSize: 12, fontWeight: "700" },
+      tabs: {
+        flexDirection: "row",
+        alignSelf: "flex-start",
+        backgroundColor: "#EAECF0",
+        borderRadius: 10,
+        padding: 4,
+        marginBottom: 28,
+      },
+      tab: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 7 },
+      tabActive: {
+        backgroundColor: "#FFFFFF",
+        shadowColor: "#101828",
+        shadowOpacity: 0.08,
+        shadowRadius: 5,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 1,
+      },
+      tabText: { color: "#667085", fontWeight: "700", fontSize: 14 },
+      tabTextActive: { color: "#4238B8" },
+      construction: {
+        backgroundColor: "#FFFFFF",
+        borderColor: "#EAECF0",
+        borderWidth: 1,
+        borderRadius: 18,
+        padding: 56,
+        alignItems: "center",
+        shadowColor: "#101828",
+        shadowOpacity: 0.05,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 8 },
+      },
+      constructionIcon: {
+        width: 64,
+        height: 64,
+        borderRadius: 20,
+        backgroundColor: "#EEEDFE",
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 18,
+      },
+      constructionSymbol: { color: "#6558F5", fontSize: 31, fontWeight: "700" },
+      constructionTitle: { color: "#172033", fontWeight: "800", fontSize: 22 },
+      constructionText: {
+        color: "#6558F5",
+        fontWeight: "800",
+        fontSize: 15,
+        marginTop: 9,
+      },
+      constructionDescription: {
+        color: "#667085",
+        fontSize: 14,
+        textAlign: "center",
+        maxWidth: 430,
+        lineHeight: 21,
+        marginTop: 9,
+      },
+      sectionHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 18,
+        gap: 20,
+      },
+      sectionTitle: { fontSize: 21, color: "#172033", fontWeight: "800" },
+      sectionSubtitle: { color: "#667085", fontSize: 14, marginTop: 5 },
+      primaryButton: {
+        backgroundColor: "#6558F5",
+        borderRadius: 10,
+        paddingHorizontal: 18,
+        paddingVertical: 13,
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 48,
+      },
+      primaryText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+      card: {
+        backgroundColor: "#FFFFFF",
+        borderWidth: 1,
+        borderColor: "#EAECF0",
+        borderRadius: 16,
+        overflow: "hidden",
+        shadowColor: "#101828",
+        shadowOpacity: 0.06,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 2,
+      },
+      table: { minWidth: 970, width: "100%" },
+      tableRow: {
+        minHeight: 72,
+        flexDirection: "row",
+        alignItems: "center",
+        borderTopWidth: 1,
+        borderTopColor: "#EAECF0",
+        paddingHorizontal: 20,
+      },
+      tableHead: {
+        backgroundColor: "#F9FAFB",
+        borderTopWidth: 0,
+        minHeight: 42,
+      },
+      tableHeadText: {
+        color: "#667085",
+        fontSize: 11,
+        fontWeight: "800",
+        letterSpacing: 0.4,
+      },
+      nameCell: {
+        width: 230,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 11,
+      },
+      typeCell: { width: 150, justifyContent: "center" },
+      bankCell: { width: 130 },
+      databaseCell: { width: 230 },
+      userCell: { width: 140 },
+      actionCell: { width: 140 },
+      databaseIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      databaseIconText: { color: "#344054", fontWeight: "800", fontSize: 11 },
+      connectionName: { color: "#172033", fontWeight: "700", fontSize: 14 },
+      connectionSub: { color: "#98A2B3", fontSize: 12, marginTop: 2 },
+      cellText: { color: "#475467", fontSize: 13 },
+      tag: {
+        alignSelf: "flex-start",
+        backgroundColor: "#F4F3FF",
+        paddingHorizontal: 9,
+        paddingVertical: 5,
+        borderRadius: 999,
+      },
+      tagText: { fontSize: 11, color: "#5546CB", fontWeight: "700" },
+      actions: { flexDirection: "row", gap: 13 },
+      edit: { color: "#6558F5", fontSize: 13, fontWeight: "700" },
+      delete: { color: "#D92D20", fontSize: 13, fontWeight: "700" },
+      empty: { alignItems: "center", paddingVertical: 56, gap: 8 },
+      emptySymbol: { fontSize: 32, color: "#6558F5" },
+      emptyTitle: { color: "#344054", fontWeight: "700", fontSize: 16 },
+      muted: { color: "#667085", fontSize: 14 },
+      link: { color: "#6558F5", fontWeight: "700", marginTop: 8 },
+      loading: { paddingVertical: 50, alignItems: "center", gap: 12 },
+      notice: {
+        borderRadius: 10,
+        padding: 14,
+        marginBottom: 18,
+        borderWidth: 1,
+      },
+      noticeSuccess: { backgroundColor: "#ECFDF3", borderColor: "#ABEFC6" },
+      noticeError: { backgroundColor: "#FEF3F2", borderColor: "#FECDCA" },
+      noticeTitle: { fontWeight: "700", color: "#344054", marginBottom: 3 },
+      noticeText: { color: "#475467", fontSize: 13, lineHeight: 19 },
+      overlay: { flex: 1, backgroundColor: "rgba(16,24,40,.46)" },
+      modalScroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
+      modal: {
+        backgroundColor: "#fff",
+        width: "100%",
+        maxWidth: 650,
+        alignSelf: "center",
+        padding: 26,
+        borderRadius: 18,
+        shadowColor: "#101828",
+        shadowOpacity: 0.2,
+        shadowRadius: 30,
+        shadowOffset: { width: 0, height: 15 },
+      },
+      modalHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 22,
+      },
+      modalTitle: { color: "#172033", fontSize: 22, fontWeight: "800" },
+      modalSubtitle: { color: "#667085", fontSize: 13, marginTop: 5 },
+      close: { fontSize: 30, lineHeight: 28, color: "#667085" },
+      field: { marginBottom: 15 },
+      label: {
+        color: "#344054",
+        fontSize: 13,
+        fontWeight: "700",
+        marginBottom: 7,
+      },
+      input: {
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        height: 46,
+        color: "#172033",
+        fontSize: 15,
+        backgroundColor: "#FFF",
+      },
+      pickerBox: {
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 8,
+        height: 46,
+        overflow: "hidden",
+        justifyContent: "center",
+      },
+      twoColumns: { flexDirection: "row", gap: 12 },
+      flexTwo: { flex: 2 },
+      flexOne: { flex: 1 },
+      formActions: {
+        flexDirection: "row",
+        justifyContent: "flex-end",
+        gap: 12,
+        marginTop: 12,
+      },
+      secondaryButton: {
+        borderWidth: 1,
+        borderColor: "#D0D5DD",
+        borderRadius: 10,
+        paddingHorizontal: 18,
+        minHeight: 48,
+        justifyContent: "center",
+        alignItems: "center",
+      },
+      secondaryText: { color: "#344054", fontSize: 14, fontWeight: "700" },
+      disabled: { opacity: 0.6 },
+    },
+    {
+      page: { flex: 1, backgroundColor: "#F7F8FC" },
+      appShell: { flex: 1, flexDirection: "row", minHeight: "100%" },
+      watermarkBlue: {
+        position: "absolute",
+        width: 560,
+        height: 560,
+        borderRadius: 280,
+        borderWidth: 54,
+        borderColor: "rgba(56, 137, 238, 0.055)",
+        top: 180,
+        right: -360,
+      },
+      watermarkGreen: {
+        position: "absolute",
+        width: 440,
+        height: 440,
+        borderRadius: 220,
+        backgroundColor: "rgba(100, 196, 119, 0.045)",
+        bottom: 60,
+        right: 120,
+      },
+      watermarkRing: {
+        position: "absolute",
+        width: 330,
+        height: 330,
+        borderRadius: 165,
+        borderWidth: 26,
+        borderColor: "rgba(76, 177, 228, 0.045)",
+        top: 430,
+        left: 170,
+      },
+      sidebar: {
+        width: 240,
+        backgroundColor: "#FFFFFF",
+        borderRightWidth: 1,
+        borderRightColor: "#EAECF0",
+        padding: 24,
+        justifyContent: "space-between",
+      },
+      sidebarBrand: { gap: 7 },
+      sidebarLogo: { width: 160, height: 126, alignSelf: "flex-start" },
+      sidebarTitle: { color: "#172033", fontSize: 20, fontWeight: "800" },
+      sideTabs: { gap: 8, marginTop: 26, flex: 1 },
+      sideTab: {
+        width: "100%",
+        paddingVertical: 12,
+        paddingHorizontal: 13,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 9,
+        backgroundColor: "transparent",
+      },
+      sideTabActive: {
+        backgroundColor: "#EEEDFE",
+        shadowOpacity: 0,
+        elevation: 0,
+      },
+      tabIcon: {
+        width: 24,
+        height: 24,
+        borderRadius: 8,
+        backgroundColor: "#F2F4F7",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      tabIconActive: { backgroundColor: "#DFDCFF" },
+      tabIconText: { color: "#667085", fontSize: 15, fontWeight: "800", lineHeight: 18 },
+      tabIconTextActive: { color: "#5546CB" },
+      sidebarFooter: { gap: 16 },
+      userBar: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        padding: 8,
+        borderRadius: 10,
+        backgroundColor: "#F9FAFB",
+      },
+      userAvatar: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#E4EEFF",
+      },
+      userAvatarText: { color: "#315FA6", fontSize: 12, fontWeight: "800" },
+      userName: { flex: 1, color: "#344054", fontSize: 13, fontWeight: "700" },
+      themeToggle: {
+        width: 30,
+        height: 30,
+        borderRadius: 8,
+        backgroundColor: "#EEEDFE",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      themeToggleText: {
+        color: "#5546CB",
+        fontSize: 18,
+        lineHeight: 21,
+        fontWeight: "800",
+      },
+      sidebarStatuses: {
+        gap: 12,
+        paddingTop: 14,
+        borderTopWidth: 1,
+        borderTopColor: "#EAECF0",
+      },
+      sideStatus: { flexDirection: "row", alignItems: "center", gap: 7 },
+      statusText: { flex: 1 },
+      connectorDownload: {
+        width: 27,
+        height: 27,
+        borderRadius: 7,
+        backgroundColor: "#EEEDFE",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      connectorDownloadText: {
+        color: "#5546CB",
+        fontSize: 18,
+        fontWeight: "900",
+        lineHeight: 21,
+      },
+      mainContent: {
+        width: "100%",
+        maxWidth: 1260,
+        alignSelf: "center",
+        padding: 34,
+        paddingBottom: 64,
+      },
+      settingsPage: { width: "100%" },
+      settingsCard: { width: "100%", maxWidth: 720, padding: 24 },
+      settingsInput: { minHeight: 46 },
+      settingsHelp: { color: "#667085", fontSize: 13, lineHeight: 19, marginTop: -4, marginBottom: 18 },
+      settingsButton: { alignSelf: "flex-start" },
+      input: {
+        height: 40,
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        color: "#172033",
+        fontSize: 14,
+        backgroundColor: "#FFF",
+      },
+      pickerBox: {
+        width: "100%",
+        height: 40,
+        borderColor: "#D0D5DD",
+        borderWidth: 1,
+        borderRadius: 8,
+        overflow: "hidden",
+        justifyContent: "center",
+        backgroundColor: "#FFF",
+      },
+      resultControls: {
+        flexDirection: "row-reverse",
+        alignItems: "center",
+        gap: 14,
+      },
+      resultsHeading: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 20,
+        padding: 22,
+        borderBottomColor: "#EAECF0",
+        borderBottomWidth: 1,
+      },
+      compareSubtabs: {
+        flexDirection: "row",
+        gap: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: "#EAECF0",
+        marginBottom: 18,
+      },
+      compareSubtab: {
+        paddingVertical: 11,
+        paddingHorizontal: 14,
+        borderBottomWidth: 2,
+        borderBottomColor: "transparent",
+      },
+      compareSubtabActive: { borderBottomColor: "#6558F5" },
+      compareSubtabText: { color: "#667085", fontSize: 13, fontWeight: "700" },
+      compareSubtabTextActive: { color: "#5546CB" },
+      constructionPanel: {
+        minHeight: 370,
+        backgroundColor: "#FFFFFF",
+        borderColor: "#EAECF0",
+        borderWidth: 1,
+        borderRadius: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 32,
+      },
+      constructionImage: { width: 180, height: 180, marginBottom: 10 },
+      constructionTitle: { color: "#172033", fontWeight: "800", fontSize: 19 },
+      constructionText: {
+        color: "#6558F5",
+        fontWeight: "800",
+        fontSize: 14,
+        marginTop: 7,
+      },
+    },
+  ) as any,
+);
