@@ -3409,7 +3409,7 @@ const styles = StyleSheet.create(
       statusText: { flex: 1 },
       connectorDownload: {
         width: "100%",
-        minHeight: 50,
+        minHeight: 58,
         borderRadius: 11,
         paddingHorizontal: 10,
         flexDirection: "row",
@@ -3420,8 +3420,8 @@ const styles = StyleSheet.create(
         borderColor: "#DFDCFF",
       },
       connectorDownloadIcon: {
-        width: 32,
-        height: 32,
+        width: 36,
+        height: 36,
         borderRadius: 8,
         backgroundColor: "#071D3A",
         alignItems: "center",
@@ -3430,7 +3430,7 @@ const styles = StyleSheet.create(
       connectorDownloadText: {
         color: "#5546CB",
         fontSize: 13,
-        fontWeight: "800",
+        fontWeight: "400",
         flex: 1,
       },
       mainContent: {
