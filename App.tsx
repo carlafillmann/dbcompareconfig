@@ -1116,7 +1116,11 @@ function LoginBackground() {
       setBursts((current) => current.filter((burst) => burst.id !== id));
     }, 1100);
   };
-  const spriteUri = require("./assets/login-animation-sprite.png");
+  const spriteAsset = require("./assets/login-animation-sprite.png");
+  const spriteUri =
+    typeof spriteAsset === "string"
+      ? spriteAsset
+      : spriteAsset.uri || spriteAsset.default || spriteAsset.src;
   const sprite = (
     kind: "database" | "die" | "bench",
     className: string,
