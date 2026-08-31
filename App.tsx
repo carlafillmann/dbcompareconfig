@@ -2653,7 +2653,7 @@ export default function App() {
               {currentUser.role === "Administrador" && (
                 <Tab
                   text="Administrador"
-                  icon="⚙"
+                  icon="♙"
                   active={activeTab === "administrator"}
                   onPress={() => {
                     setShowUsers(false);
