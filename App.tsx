@@ -43,7 +43,7 @@ type EnvironmentType =
   | "Interna"
   | "Desenvolvimento";
 type Connection = FirestoreConnection;
-type FormData = Omit<Connection, "id"> & { password: string };
+type FormData = Omit<Connection, "id" | "ownerUserId"> & { password: string };
 type Notice = {
   type: "success" | "error";
   title: string;
@@ -2121,9 +2121,14 @@ export default function App() {
     return body;
   };
   const loadConnections = async () => {
+    if (!currentUser) {
+      setConnections([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      setConnections(await listConnections());
+      setConnections(await listConnections(currentUser.id));
       setFirestoreOnline(true);
     } catch (error) {
       setFirestoreOnline(false);
@@ -2215,9 +2220,9 @@ export default function App() {
     await loadParameterGroups();
   };
   useEffect(() => {
-    loadConnections();
+    void loadConnections();
     void loadParameterGroups().catch(() => undefined);
-  }, []);
+  }, [currentUser?.id]);
   useEffect(() => {
     void getApiVersionSettings()
       .then((settings) => setLatestApiVersion(settings.latestVersion))
@@ -2615,6 +2620,7 @@ export default function App() {
         port: Number(form.port),
         database: form.database,
         username: form.username,
+        ownerUserId: currentUser?.id || "",
       };
       if (editingId) await updateConnection({ id: editingId, ...connection });
       else await createConnection(connection);

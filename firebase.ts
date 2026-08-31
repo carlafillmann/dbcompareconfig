@@ -53,6 +53,7 @@ export type FirestoreConnection = {
   port: number;
   database: string;
   username: string;
+  ownerUserId: string;
 };
 
 // Perfil do usuário. `themePreference` é um campo interno: é persistido no
@@ -102,13 +103,15 @@ const fromDocument = (document: FirestoreDocument): FirestoreConnection => {
     port: Number(fields.port?.integerValue || 0),
     database: value("database"),
     username: value("username"),
+    ownerUserId: value("ownerUserId"),
   };
 };
 
-export async function listConnections() {
+export async function listConnections(ownerUserId: string) {
   const result = await getDocs(collection(firestore, "connections"));
   return result.docs
     .map((item) => ({ id: item.id, ...item.data() }) as FirestoreConnection)
+    .filter((connection) => connection.ownerUserId === ownerUserId)
     .sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
 }
 
