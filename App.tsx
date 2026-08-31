@@ -858,19 +858,18 @@ function CompareResults({
           </View>
           {showFilters && (
             <View style={[styles.resultRow, styles.filterRow]}>
-              {!features && (
-                <TextInput
-                  style={[
-                    styles.filterInput,
-                    styles.codeResult,
-                    webservice && styles.webserviceCodeResult,
-                  ]}
-                  value={filters.code}
-                  onChangeText={(value) => onFilterChange("code", value)}
-                  placeholder="Filtrar"
-                  placeholderTextColor="#98A2B3"
-                />
-              )}
+              <TextInput
+                style={[
+                  styles.filterInput,
+                  styles.codeResult,
+                  webservice && styles.webserviceCodeResult,
+                  features && styles.featureCodeResult,
+                ]}
+                value={filters.code}
+                onChangeText={(value) => onFilterChange("code", value)}
+                placeholder="Filtrar"
+                placeholderTextColor="#98A2B3"
+              />
               {!features && (
                 <TextInput
                   style={[
@@ -884,13 +883,15 @@ function CompareResults({
                   placeholderTextColor="#98A2B3"
                 />
               )}
-              <TextInput
-                style={[styles.filterInput, styles.explanationResult]}
-                value={filters.explanation}
-                onChangeText={(value) => onFilterChange("explanation", value)}
-                placeholder="Filtrar"
-                placeholderTextColor="#98A2B3"
-              />
+              {!features && (
+                <TextInput
+                  style={[styles.filterInput, styles.explanationResult]}
+                  value={filters.explanation}
+                  onChangeText={(value) => onFilterChange("explanation", value)}
+                  placeholder="Filtrar"
+                  placeholderTextColor="#98A2B3"
+                />
+              )}
               <TextInput
                 style={[styles.filterInput, styles.valueResult]}
                 value={filters.first}
@@ -905,13 +906,17 @@ function CompareResults({
                 placeholder="Filtrar"
                 placeholderTextColor="#98A2B3"
               />
-              <TextInput
-                style={[styles.filterInput, styles.statusResult]}
-                value={filters.status}
-                onChangeText={(value) => onFilterChange("status", value)}
-                placeholder="Filtrar"
-                placeholderTextColor="#98A2B3"
-              />
+              {features ? (
+                <View style={styles.statusResult} />
+              ) : (
+                <TextInput
+                  style={[styles.filterInput, styles.statusResult]}
+                  value={filters.status}
+                  onChangeText={(value) => onFilterChange("status", value)}
+                  placeholder="Filtrar"
+                  placeholderTextColor="#98A2B3"
+                />
+              )}
             </View>
           )}
           {displayed.map((row) => (
@@ -3696,7 +3701,7 @@ const styles = StyleSheet.create(
       descriptionResult: { width: 290, justifyContent: "center" },
       webserviceCodeResult: { width: 380 },
       webserviceDescriptionResult: { width: 90 },
-      featureCodeResult: { width: 420 },
+      featureCodeResult: { width: 470 },
       valueResult: { width: 220 },
       statusResult: { width: 160, justifyContent: "center" },
       descriptionLine: { flexDirection: "row", alignItems: "center", gap: 8 },
