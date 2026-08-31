@@ -88,7 +88,7 @@ const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   "http://127.0.0.1:3333";
 const connectorDownloadUrl =
-  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.3/DBCompare.Connector.Setup.1.0.3.exe";
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.4/DBCompare.Connector.Setup.1.0.4.exe";
 const environments: EnvironmentType[] = [
   "Produção",
   "Homologação",
@@ -382,6 +382,97 @@ function WebservicesComparison({
     </View>
   );
 }
+function FeaturesComparison({
+  left,
+  right,
+  firstName,
+  secondName,
+  compareFeatures,
+  onDescriptionPress,
+}: {
+  left: CompareSelection;
+  right: CompareSelection;
+  firstName: string;
+  secondName: string;
+  compareFeatures: () => Promise<CompareResult[]>;
+  onDescriptionPress: (row: CompareResult) => void;
+}) {
+  const [rows, setRows] = useState<CompareResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [onlyDifferent, setOnlyDifferent] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({
+    code: "",
+    description: "",
+    explanation: "",
+    first: "",
+    second: "",
+    status: "",
+  });
+  useEffect(() => {
+    setRows(null);
+    setError("");
+    if (
+      !left.connectionId ||
+      !right.connectionId ||
+      !left.password ||
+      !right.password
+    )
+      return;
+    setLoading(true);
+    compareFeatures()
+      .then(setRows)
+      .catch((error) => setError(errorText(error)))
+      .finally(() => setLoading(false));
+  }, [
+    left.connectionId,
+    right.connectionId,
+    left.username,
+    left.password,
+    right.username,
+    right.password,
+  ]);
+  return (
+    <View>
+      {loading && (
+        <View style={styles.loading}>
+          <ActivityIndicator color="#6558F5" />
+          <Text style={styles.muted}>Consultando Features…</Text>
+        </View>
+      )}
+      {error ? <Text style={styles.loginError}>{error}</Text> : null}
+      {!loading &&
+        !error &&
+        (!left.connectionId ||
+          !right.connectionId ||
+          !left.password ||
+          !right.password) && (
+          <Text style={styles.muted}>
+            Selecione as duas bases e informe suas senhas para comparar as
+            Features.
+          </Text>
+        )}
+      {rows && (
+        <CompareResults
+          rows={rows}
+          firstName={firstName}
+          secondName={secondName}
+          onlyDifferent={onlyDifferent}
+          onOnlyDifferentChange={setOnlyDifferent}
+          filters={filters}
+          onFilterChange={(column, value) =>
+            setFilters((current) => ({ ...current, [column]: value }))
+          }
+          showFilters={showFilters}
+          onToggleFilters={() => setShowFilters((value) => !value)}
+          onDescriptionPress={onDescriptionPress}
+          onExplanationPress={onDescriptionPress}
+        />
+      )}
+    </View>
+  );
+}
 function CompareOutput(
   props: React.ComponentProps<typeof CompareResults> & {
     left: CompareSelection;
@@ -393,6 +484,7 @@ function CompareOutput(
       firstCode: string,
       secondCode: string,
     ) => Promise<CompareResult[]>;
+    compareFeatures: () => Promise<CompareResult[]>;
   },
 ) {
   const [tab, setTab] = useState<"system" | "webservices" | "features">(
@@ -460,6 +552,15 @@ function CompareOutput(
           secondName={props.secondName}
           loadWebServices={props.loadWebServices}
           compareWebServices={props.compareWebServices}
+          onDescriptionPress={props.onExplanationPress}
+        />
+      ) : tab === "features" ? (
+        <FeaturesComparison
+          left={props.left}
+          right={props.right}
+          firstName={props.firstName}
+          secondName={props.secondName}
+          compareFeatures={props.compareFeatures}
           onDescriptionPress={props.onExplanationPress}
         />
       ) : (
@@ -693,10 +794,22 @@ function CompareResults({
       <ScrollView horizontal>
         <View style={styles.resultsTable}>
           <View style={[styles.resultRow, styles.resultHead]}>
-            <Text style={[styles.tableHeadText, styles.codeResult]}>
+            <Text
+              style={[
+                styles.tableHeadText,
+                styles.codeResult,
+                webservice && styles.webserviceCodeResult,
+              ]}
+            >
               {webservice ? "PARÂMETRO" : "CÓDIGO"}
             </Text>
-            <Text style={[styles.tableHeadText, styles.descriptionResult]}>
+            <Text
+              style={[
+                styles.tableHeadText,
+                styles.descriptionResult,
+                webservice && styles.webserviceDescriptionResult,
+              ]}
+            >
               {webservice ? "DESCRIÇÃO" : "DESCRIÇÃO"}
             </Text>
             <Text style={[styles.tableHeadText, styles.explanationResult]}>
@@ -722,14 +835,22 @@ function CompareResults({
           {showFilters && (
             <View style={[styles.resultRow, styles.filterRow]}>
               <TextInput
-                style={[styles.filterInput, styles.codeResult]}
+                style={[
+                  styles.filterInput,
+                  styles.codeResult,
+                  webservice && styles.webserviceCodeResult,
+                ]}
                 value={filters.code}
                 onChangeText={(value) => onFilterChange("code", value)}
                 placeholder="Filtrar"
                 placeholderTextColor="#98A2B3"
               />
               <TextInput
-                style={[styles.filterInput, styles.descriptionResult]}
+                style={[
+                  styles.filterInput,
+                  styles.descriptionResult,
+                  webservice && styles.webserviceDescriptionResult,
+                ]}
                 value={filters.description}
                 onChangeText={(value) => onFilterChange("description", value)}
                 placeholder="Filtrar"
@@ -767,10 +888,21 @@ function CompareResults({
           )}
           {displayed.map((row) => (
             <View key={row.cdParametro} style={styles.resultRow}>
-              <Text style={[styles.cellText, styles.codeResult]}>
+              <Text
+                style={[
+                  styles.cellText,
+                  styles.codeResult,
+                  webservice && styles.webserviceCodeResult,
+                ]}
+              >
                 {row.cdParametro}
               </Text>
-              <View style={styles.descriptionResult}>
+              <View
+                style={[
+                  styles.descriptionResult,
+                  webservice && styles.webserviceDescriptionResult,
+                ]}
+              >
                 {webservice ? (
                   <Pressable
                     style={styles.ellipsisButton}
@@ -2315,6 +2447,16 @@ export default function App() {
     });
     return result.rows || [];
   };
+  const compareFeatures = async (): Promise<CompareResult[]> => {
+    const result = await request("/api/features/compare", {
+      method: "POST",
+      body: JSON.stringify({
+        first: webServiceConnection(leftCompare),
+        second: webServiceConnection(rightCompare),
+      }),
+    });
+    return result.rows || [];
+  };
   const compareBases = async () => {
     try {
       const first = connections.find(
@@ -2795,6 +2937,7 @@ export default function App() {
                         right={rightCompare}
                         loadWebServices={loadWebServices}
                         compareWebServices={compareWebServices}
+                        compareFeatures={compareFeatures}
                         parameterGroups={parameterGroups}
                         selectedParameterGroupId={selectedParameterGroupId}
                         onParameterGroupChange={setSelectedParameterGroupId}
@@ -3428,6 +3571,8 @@ const styles = StyleSheet.create(
       },
       codeResult: { width: 130 },
       descriptionResult: { width: 290, justifyContent: "center" },
+      webserviceCodeResult: { width: 280 },
+      webserviceDescriptionResult: { width: 105 },
       valueResult: { width: 220 },
       statusResult: { width: 160, justifyContent: "center" },
       descriptionLine: { flexDirection: "row", alignItems: "center", gap: 8 },

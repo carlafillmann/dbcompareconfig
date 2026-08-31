@@ -37,7 +37,8 @@ const webServicesQuery =
   "SELECT CDWEBSERVICES, DEWEBSERVICES, SGTIPOINTEGRACAO FROM ESPJWS";
 const webServiceParametersQuery =
   "SELECT CDWEBSERVICES, DEPARAMETRO, DEDESCRICAO, VLPARAMETRO FROM ESPJWSPARAMETROS WHERE CDWEBSERVICES = ";
-const apiVersion = "1.0.3";
+const featuresQuery = "SELECT NMCONFIGFEATURE, VLCONFIG FROM ESPJCONFIGFEATURE";
+const apiVersion = "1.0.4";
 
 const app = express();
 const allowedOrigins = (
@@ -260,6 +261,7 @@ function normalizeWebServiceParameter(
 async function queryWebServiceRows(
   data: Required<ConnectionPayload>,
   serviceCode?: string,
+  queryOverride?: string,
 ): Promise<Record<string, unknown>[]> {
   if (data.databaseType === "postgresql") {
     const client = new PgClient({
@@ -275,7 +277,9 @@ async function queryWebServiceRows(
       await client.connect();
       return (
         await client.query(
-          serviceCode ? `${webServiceParametersQuery}$1` : webServicesQuery,
+          serviceCode
+            ? `${webServiceParametersQuery}$1`
+            : queryOverride || webServicesQuery,
           serviceCode ? [serviceCode] : [],
         )
       ).rows;
@@ -301,7 +305,7 @@ async function queryWebServiceRows(
         await request.query(
           serviceCode
             ? `${webServiceParametersQuery}@serviceCode`
-            : webServicesQuery,
+            : queryOverride || webServicesQuery,
         )
       ).recordset;
     } finally {
@@ -318,7 +322,7 @@ async function queryWebServiceRows(
     const result = await connection.execute<Record<string, unknown>>(
       serviceCode
         ? `${webServiceParametersQuery}:serviceCode`
-        : webServicesQuery,
+        : queryOverride || webServicesQuery,
       serviceCode ? { serviceCode } : [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
@@ -338,6 +342,19 @@ async function queryWebServiceParameters(
 ) {
   return (await queryWebServiceRows(data, serviceCode)).map(
     normalizeWebServiceParameter,
+  );
+}
+function normalizeFeature(row: Record<string, unknown>): ParameterRow {
+  return {
+    cdParametro: valueText(row, "NMCONFIGFEATURE"),
+    deParametro: "",
+    vlParametro: nullableText(row, "VLCONFIG"),
+    deExplicacao: null,
+  };
+}
+async function queryFeatures(data: Required<ConnectionPayload>) {
+  return (await queryWebServiceRows(data, undefined, featuresQuery)).map(
+    normalizeFeature,
   );
 }
 function compareWebServiceParameters(
@@ -478,6 +495,24 @@ app.post("/api/webservices/compare", async (req, res, next) => {
     );
     res.json({
       rows: compareWebServiceParameters(firstRows, secondRows),
+      firstCount: firstRows.length,
+      secondCount: secondRows.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+app.post("/api/features/compare", async (req, res, next) => {
+  try {
+    const body = req.body as { first?: CompareSide; second?: CompareSide };
+    const firstRows = await queryFeatures(
+      comparisonConnection(body.first || {}),
+    );
+    const secondRows = await queryFeatures(
+      comparisonConnection(body.second || {}),
+    );
+    res.json({
+      rows: compareParameters(firstRows, secondRows),
       firstCount: firstRows.length,
       secondCount: secondRows.length,
     });
