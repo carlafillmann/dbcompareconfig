@@ -2094,40 +2094,6 @@ export default function App() {
                 <Animated.View
                   style={[
                     styles.sideStatus,
-                    connectorOnline === false && { opacity: connectorPulse },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.dot,
-                      connectorOnline === false && styles.dotOffline,
-                      connectorOnline === null && styles.dotWaiting,
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      connectorOnline === false && styles.statusTextOffline,
-                      connectorOnline === null && styles.statusTextWaiting,
-                    ]}
-                  >
-                    {connectorOnline === false
-                      ? "DBCompare Connector indisponível"
-                      : connectorOnline
-                        ? "DBCompare Connector conectado"
-                        : "Verificando DBCompare Connector"}
-                  </Text>
-                  <Pressable
-                    onPress={downloadConnector}
-                    style={styles.connectorDownload}
-                    accessibilityLabel="Baixar DBCompare Connector"
-                  >
-                    <Text style={styles.connectorDownloadText}>↓</Text>
-                  </Pressable>
-                </Animated.View>
-                <Animated.View
-                  style={[
-                    styles.sideStatus,
                     firestoreOnline === false && { opacity: firestorePulse },
                   ]}
                 >
@@ -2152,6 +2118,47 @@ export default function App() {
                         : "Conectando ao Firestore"}
                   </Text>
                 </Animated.View>
+                <Animated.View
+                  style={[
+                    styles.sideStatus,
+                    connectorOnline === false && { opacity: connectorPulse },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.dot,
+                      connectorOnline === false && styles.dotOffline,
+                      connectorOnline === null && styles.dotWaiting,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.statusText,
+                      connectorOnline === false && styles.statusTextOffline,
+                      connectorOnline === null && styles.statusTextWaiting,
+                    ]}
+                  >
+                    {connectorOnline === false
+                      ? "DBCompare Connector indisponível"
+                      : connectorOnline
+                        ? "DBCompare Connector conectado"
+                        : "Verificando DBCompare Connector"}
+                  </Text>
+                </Animated.View>
+                <Pressable
+                  onPress={downloadConnector}
+                  style={styles.connectorDownload}
+                  accessibilityLabel="Baixar DBCompare Connector"
+                >
+                  <Image
+                    source={require("./assets/api-download.png")}
+                    style={styles.connectorDownloadIcon}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.connectorDownloadText}>
+                    Baixar DBCompare Connector
+                  </Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -3401,18 +3408,30 @@ const styles = StyleSheet.create(
       sideStatus: { flexDirection: "row", alignItems: "center", gap: 7 },
       statusText: { flex: 1 },
       connectorDownload: {
-        width: 27,
-        height: 27,
-        borderRadius: 7,
-        backgroundColor: "#EEEDFE",
+        width: "100%",
+        minHeight: 42,
+        borderRadius: 9,
+        paddingHorizontal: 8,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        backgroundColor: "#F4F3FF",
+        borderWidth: 1,
+        borderColor: "#DFDCFF",
+      },
+      connectorDownloadIcon: {
+        width: 26,
+        height: 26,
+        borderRadius: 6,
+        backgroundColor: "#071D3A",
         alignItems: "center",
         justifyContent: "center",
       },
       connectorDownloadText: {
         color: "#5546CB",
-        fontSize: 18,
-        fontWeight: "900",
-        lineHeight: 21,
+        fontSize: 12,
+        fontWeight: "800",
+        flex: 1,
       },
       mainContent: {
         width: "100%",
