@@ -1068,6 +1068,102 @@ function CompareResults({
   );
 }
 
+function LoginBackground() {
+  const [pointer, setPointer] = useState({ x: 0, y: 0 });
+  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>(
+    [],
+  );
+  const move = (event: any) => {
+    const width = window.innerWidth || 1;
+    const height = window.innerHeight || 1;
+    setPointer({
+      x: (event.clientX / width - 0.5) * 2,
+      y: (event.clientY / height - 0.5) * 2,
+    });
+  };
+  const launchData = (event: any) => {
+    const id = Date.now();
+    setBursts((current) => [
+      ...current,
+      {
+        id,
+        x: (event.clientX / (window.innerWidth || 1)) * 100,
+        y: (event.clientY / (window.innerHeight || 1)) * 100,
+      },
+    ]);
+    setTimeout(() => {
+      setBursts((current) => current.filter((burst) => burst.id !== id));
+    }, 1100);
+  };
+  const stack = (className: string, color: "blue" | "green") =>
+    createElement(
+      "div",
+      {
+        className: `login-db-stack ${className}`,
+        style: {
+          transform: `translate(${pointer.x * (color === "blue" ? 9 : -7)}px, ${pointer.y * 7}px)`,
+        },
+      },
+      [0, 1, 2].map((disk) =>
+        createElement("span", {
+          className: `login-db-disk login-db-${color}`,
+          key: disk,
+        }),
+      ),
+    );
+  return createElement(
+    "div",
+    {
+      className: "login-animated-background",
+      onMouseMove: move,
+      onClick: launchData,
+      "aria-hidden": true,
+    },
+    createElement(
+      "style",
+      null,
+      `
+        @keyframes loginFloat { 0%,100% { margin-top: 0; } 50% { margin-top: -16px; } }
+        @keyframes loginOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes loginPop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1.1); } }
+        .login-animated-background { position:absolute; inset:0; overflow:hidden; background:radial-gradient(circle at 20% 20%, rgba(91,142,255,.17), transparent 31%), radial-gradient(circle at 85% 74%, rgba(110,201,103,.14), transparent 28%), linear-gradient(135deg,#f8fbff 0%,#f2f6ff 55%,#f8fcfa 100%); }
+        .login-animated-background::before { content:""; position:absolute; inset:0; opacity:.48; background-image:linear-gradient(rgba(85,115,175,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(85,115,175,.07) 1px,transparent 1px); background-size:34px 34px; mask-image:linear-gradient(to bottom,transparent,black 20%,black 80%,transparent); }
+        .login-db-stack { position:absolute; display:flex; flex-direction:column; gap:5px; width:104px; animation:loginFloat 6s ease-in-out infinite; transition:transform .25s ease-out; filter:drop-shadow(0 17px 15px rgba(20,50,90,.13)); }
+        .login-db-stack.stack-one { left:8%; top:16%; animation-delay:-1.4s; } .login-db-stack.stack-two { right:9%; bottom:14%; animation-delay:-3.6s; }
+        .login-db-disk { height:27px; border-radius:50% 50% 13px 13px; border:1px solid rgba(255,255,255,.55); position:relative; overflow:hidden; }
+        .login-db-disk::after { content:""; position:absolute; left:0; right:0; top:7px; border-top:1px solid rgba(255,255,255,.45); }
+        .login-db-blue { background:linear-gradient(135deg,#73b6ff,#2767c4 68%,#1a4b98); } .login-db-green { background:linear-gradient(135deg,#b0e97e,#58aa5b 62%,#287447); }
+        .login-data-node { position:absolute; width:12px; height:12px; border-radius:4px; background:#fff; box-shadow:0 3px 11px rgba(39,103,196,.2); animation:loginFloat 4s ease-in-out infinite; }
+        .login-node-one { left:30%; bottom:19%; animation-delay:-1s; } .login-node-two { right:25%; top:22%; background:#d9f5c8; animation-delay:-2.2s; } .login-node-three { right:14%; top:44%; width:8px; height:8px; background:#c9ddff; animation-delay:-.4s; }
+        .login-orbit { position:absolute; width:250px; height:250px; left:50%; top:50%; margin-left:-125px; margin-top:-125px; border:1px solid rgba(70,116,206,.12); border-radius:50%; animation:loginOrbit 28s linear infinite; }
+        .login-orbit::before,.login-orbit::after { content:""; position:absolute; width:11px; height:11px; border-radius:50%; background:#6b5cf6; box-shadow:0 0 0 6px rgba(107,92,246,.1); } .login-orbit::before { top:12px; left:33px; } .login-orbit::after { right:16px; bottom:52px; background:#69bb68; box-shadow:0 0 0 6px rgba(105,187,104,.1); }
+        .login-data-pop { position:absolute; z-index:1; width:23px; height:23px; border-radius:7px; color:#fff; background:linear-gradient(135deg,#7568fa,#4a85e7); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; box-shadow:0 8px 16px rgba(80,91,220,.24); animation:loginPop 1.05s ease-out forwards; }
+        .login-data-pop:nth-of-type(3n) { --x:-52px; --y:-68px; background:linear-gradient(135deg,#7fcf70,#48a06b); } .login-data-pop:nth-of-type(3n + 1) { --x:58px; --y:-54px; } .login-data-pop:nth-of-type(3n + 2) { --x:18px; --y:62px; background:linear-gradient(135deg,#64aafb,#4868dc); }
+        @media (max-width:720px) { .login-db-stack { opacity:.55; transform:scale(.75) !important; } .login-orbit { opacity:.55; } }
+      `,
+    ),
+    stack("stack-one", "blue"),
+    stack("stack-two", "green"),
+    createElement("span", { className: "login-data-node login-node-one" }),
+    createElement("span", { className: "login-data-node login-node-two" }),
+    createElement("span", { className: "login-data-node login-node-three" }),
+    createElement("span", { className: "login-orbit" }),
+    ...bursts.flatMap((burst) =>
+      ["01", "<> ", "•", "{}", "DB", "+"].map((label, index) =>
+        createElement(
+          "span",
+          {
+            className: "login-data-pop",
+            key: `${burst.id}-${index}`,
+            style: { left: `${burst.x}%`, top: `${burst.y}%` },
+          },
+          label,
+        ),
+      ),
+    ),
+  );
+}
+
 function LoginScreen({
   onLogin,
 }: {
@@ -1091,6 +1187,7 @@ function LoginScreen({
   if (Platform.OS === "web")
     return (
       <View style={styles.loginPage}>
+        <LoginBackground />
         <View style={styles.loginCard}>
           <Image
             source={require("./assets/dbcompare-logo.png")}
@@ -3618,8 +3715,12 @@ const styles = StyleSheet.create(
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
+        position: "relative",
+        overflow: "hidden",
       },
       loginCard: {
+        position: "relative",
+        zIndex: 2,
         width: "100%",
         maxWidth: 430,
         backgroundColor: "#FFFFFF",
