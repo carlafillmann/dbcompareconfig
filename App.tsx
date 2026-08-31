@@ -139,6 +139,15 @@ export default function App() {
     document.getElementById('dbcompare-app')?.classList.toggle('dark-theme', theme === 'dark');
     const sidebarLogo = document.querySelector('#dbcompare-app img') as HTMLElement | null;
     if (sidebarLogo && theme === 'light') sidebarLogo.style.cssText = 'width:164px;height:130px;box-sizing:border-box;background:#071D3A;border:2px solid #101828;border-radius:16px;';
+    const existingLightLogo = document.getElementById('dbcompare-light-logo');
+    if (theme === 'light' && sidebarLogo) {
+      if (!existingLightLogo) {
+        const overlay = document.createElement('div'); overlay.id = 'dbcompare-light-logo';
+        overlay.style.cssText = 'position:fixed;top:22px;left:22px;z-index:20;width:164px;height:130px;box-sizing:border-box;border:3px solid #101828;border-radius:16px;overflow:hidden;background:#071D3A;pointer-events:none;';
+        const image = document.createElement('img'); image.src = sidebarLogo.getAttribute('src') || ''; image.style.cssText = 'display:block;width:160px;height:126px;object-fit:contain;';
+        overlay.appendChild(image); document.body.appendChild(overlay);
+      }
+    } else existingLightLogo?.remove();
     window.localStorage.setItem('dbcompare-theme', theme);
   }, [theme]);
   useEffect(() => { const checkConnector = async () => { try { const response = await fetch(`${apiUrl}/api/health`); setConnectorOnline(response.ok); } catch { setConnectorOnline(false); } }; void checkConnector(); const interval = setInterval(checkConnector, 15000); return () => clearInterval(interval); }, []);
