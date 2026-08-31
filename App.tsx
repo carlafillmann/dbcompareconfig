@@ -20,11 +20,9 @@ import {
   deleteConnection,
   FirestoreConnection,
   FirestoreUserProfile,
-  getSettings,
   listConnections,
   listUsers,
   updateConnection,
-  updateSettings,
   updateUser,
   updateUserTheme,
   UserThemePreference,
@@ -1512,7 +1510,6 @@ export default function App() {
   const [notice, setNotice] = useState<Notice>(null);
   const [showForm, setShowForm] = useState(false);
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
-  const [ignoredParameters, setIgnoredParameters] = useState<string[]>([]);
   const [showUsers, setShowUsers] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(
     () => {
@@ -1567,10 +1564,6 @@ export default function App() {
   const loadUsers = async () => {
     setUsers(await listUsers());
   };
-  const loadSettings = async () => {
-    const settings = await getSettings();
-    setIgnoredParameters(settings.ignoredParameters);
-  };
   const login = async (username: string, password: string) => {
     const normalized = username.trim().toLocaleUpperCase();
     if (!normalized || !password) throw new Error("Informe usuário e senha.");
@@ -1619,6 +1612,7 @@ export default function App() {
       createdAt: editing?.createdAt || new Date().toISOString(),
       active: userForm.active,
       themePreference: editing?.themePreference || ("light" as Theme),
+      ignoredParameters: editing?.ignoredParameters || [],
       passwordHash,
     };
     if (editing) await updateUser({ id: editing.id, ...payload });
@@ -1636,7 +1630,6 @@ export default function App() {
   };
   useEffect(() => {
     loadConnections();
-    void loadSettings().catch(() => undefined);
   }, []);
   useEffect(() => {
     if (currentUser?.role === "Administrador") void loadUsers();
@@ -1880,7 +1873,7 @@ export default function App() {
             username: rightCompare.username,
             password: rightCompare.password,
           },
-          ignoredParameters,
+          ignoredParameters: currentUser.ignoredParameters || [],
         }),
       });
       setCompareRows(result.rows);
@@ -1896,8 +1889,11 @@ export default function App() {
     }
   };
   const saveSettings = async (parameters: string[]) => {
-    await updateSettings({ ignoredParameters: parameters });
-    setIgnoredParameters(parameters);
+    const updated = { ...currentUser, ignoredParameters: parameters };
+    await updateUser(updated);
+    setCurrentUser(updated);
+    if (Platform.OS === "web")
+      window.localStorage.setItem("dbcompare-session", JSON.stringify(updated));
   };
   const selectedName = (id: string, fallback: string) =>
     connections.find((connection) => connection.id === id)?.name || fallback;
@@ -2152,7 +2148,7 @@ export default function App() {
             )}
             {activeTab === "settings" && (
               <SettingsPanel
-                ignoredParameters={ignoredParameters}
+                ignoredParameters={currentUser.ignoredParameters || []}
                 onSave={saveSettings}
               />
             )}

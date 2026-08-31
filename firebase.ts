@@ -4,10 +4,8 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   getDocs,
   getFirestore,
-  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
@@ -68,11 +66,8 @@ export type FirestoreUserProfile = {
   createdAt: string;
   active: boolean;
   themePreference: UserThemePreference;
-  passwordHash: string;
-};
-
-export type FirestoreSettings = {
   ignoredParameters: string[];
+  passwordHash: string;
 };
 
 const text = (value: unknown) => ({ stringValue: String(value) });
@@ -159,6 +154,7 @@ const userFromDocument = (
     active: fields.active?.booleanValue !== false,
     themePreference: (value("themePreference") ||
       "light") as UserThemePreference,
+    ignoredParameters: [],
     passwordHash: value("passwordHash"),
   };
 };
@@ -166,7 +162,16 @@ const userFromDocument = (
 export async function listUsers() {
   const result = await getDocs(collection(firestore, "users"));
   return result.docs
-    .map((item) => ({ id: item.id, ...item.data() }) as FirestoreUserProfile)
+    .map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        ...data,
+        ignoredParameters: Array.isArray(data.ignoredParameters)
+          ? data.ignoredParameters.map(String)
+          : [],
+      } as FirestoreUserProfile;
+    })
     .sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
 }
 
@@ -184,26 +189,4 @@ export async function updateUser(user: FirestoreUserProfile) {
     ...data,
     ...(email ? { email } : { email: "" }),
   });
-}
-
-// As configurações são globais do DBCompare e ficam em um único documento no
-// Firestore. Assim todos os usuários usam a mesma lista de parâmetros ignorados.
-const settingsReference = doc(firestore, "settings", "comparison");
-
-export async function getSettings(): Promise<FirestoreSettings> {
-  const result = await getDoc(settingsReference);
-  const data = result.data();
-  return {
-    ignoredParameters: Array.isArray(data?.ignoredParameters)
-      ? data.ignoredParameters.map(String)
-      : [],
-  };
-}
-
-export async function updateSettings(settings: FirestoreSettings) {
-  await setDoc(
-    settingsReference,
-    { ignoredParameters: settings.ignoredParameters },
-    { merge: true },
-  );
 }
