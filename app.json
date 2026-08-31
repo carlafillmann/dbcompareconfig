@@ -3,6 +3,7 @@
     "name": "DB Compare Config",
     "slug": "db-compare-config",
     "version": "1.0.0",
-    "web": { "bundler": "metro" }
+    "icon": "./assets/dbcompare-logo.png",
+    "web": { "bundler": "metro", "favicon": "./assets/dbcompare-logo.png" }
   }
 }

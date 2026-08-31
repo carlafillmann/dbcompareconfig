@@ -4,3 +4,6 @@ node_modules/
 .env
 service-account.json
 dist/
+release/
+server/dist/
+connector/server/

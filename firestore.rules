@@ -1,0 +1,14 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // O acesso direto é necessário para o catálogo compartilhado de conexões.
+    // Senhas de bases externas nunca são armazenadas nesta coleção.
+      match /connections/{connectionId} {
+        allow read, write: if true;
+      }
+      match /users/{userId} {
+        allow read, write: if true;
+      }
+  }
+}

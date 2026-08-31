@@ -1,34 +1,17 @@
 import 'dotenv/config';
 import cors from 'cors';
-import crypto from 'node:crypto';
 import express, { NextFunction, Request, Response } from 'express';
-import admin from 'firebase-admin';
 import sql from 'mssql';
 import oracledb from 'oracledb';
 import { Client as PgClient } from 'pg';
 
 type DatabaseType = 'oracle' | 'sqlserver' | 'postgresql';
-type ConnectionPayload = { name: string; databaseType: DatabaseType; host: string; port: number; database: string; username: string; password?: string };
-type StoredConnection = Omit<ConnectionPayload, 'password'> & { password?: string; createdAt?: admin.firestore.FieldValue | FirebaseFirestore.Timestamp; updatedAt?: admin.firestore.FieldValue };
+type EnvironmentType = 'Produção' | 'Homologação' | 'Teste' | 'Espelho' | 'Nimitz' | 'Interna' | 'Desenvolvimento';
+type ConnectionPayload = { name: string; environmentType: EnvironmentType; databaseType: DatabaseType; host: string; port: number; database: string; username: string; password?: string };
+type ParameterRow = { cdParametro: string; deParametro: string; vlParametro: string | null; deExplicacao: string | null };
+type CompareSide = Partial<ConnectionPayload>;
+const parameterQuery = 'SELECT D.CDPARAMETRO, D.DEPARAMETRO, V.VLPARAMETRO, D.DEEXPLICACAO FROM EPADDEFPARAMETRO D JOIN EPADVALORPARAMETRO V ON (D.CDPARAMETRO = V.CDPARAMETRO)';
 
-const requiredEnv = (name: string) => { const value = process.env[name]; if (!value) throw new Error(`A variável ${name} não foi configurada.`); return value; };
-const encryptionKey = () => {
-  const key = requiredEnv('CONNECTION_ENCRYPTION_KEY');
-  if (!/^[a-fA-F0-9]{64}$/.test(key)) throw new Error('CONNECTION_ENCRYPTION_KEY deve conter 64 caracteres hexadecimais.');
-  return Buffer.from(key, 'hex');
-};
-const encrypt = (value: string) => { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv); const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]); return `${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${encrypted.toString('base64')}`; };
-const decrypt = (value: string) => { const [iv, tag, encrypted] = value.split('.').map(part => Buffer.from(part, 'base64')); const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8'); };
-
-function initializeFirebase() {
-  if (admin.apps.length) return;
-  const file = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
-  if (file) { admin.initializeApp({ credential: admin.credential.cert(require(require('node:path').resolve(file))) }); return; }
-  admin.initializeApp({ credential: admin.credential.cert({ projectId: requiredEnv('FIREBASE_PROJECT_ID'), clientEmail: requiredEnv('FIREBASE_CLIENT_EMAIL'), privateKey: requiredEnv('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n') }) });
-}
-initializeFirebase();
-const db = admin.firestore();
-const connections = db.collection('connections');
 const app = express();
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:8081,http://localhost:19006,https://dbcompareconf.web.app,https://dbcompareconf.firebaseapp.com').split(',').map(origin => origin.trim());
 app.use(cors({ origin(origin, callback) {
@@ -40,12 +23,11 @@ app.use(express.json({ limit: '32kb' }));
 
 function validate(body: unknown, requirePassword = true): ConnectionPayload {
   const data = body as Partial<ConnectionPayload>;
-  if (!data || !['oracle', 'sqlserver', 'postgresql'].includes(data.databaseType || '') || !data.name?.trim() || !data.host?.trim() || !data.database?.trim() || !data.username?.trim() || (requirePassword && !data.password)) throw new Error('Nome, tipo, host, porta, base, usuário e senha são obrigatórios.');
+  if (!data || !['Produção', 'Homologação', 'Teste', 'Espelho', 'Nimitz', 'Interna', 'Desenvolvimento'].includes(data.environmentType || '') || !['oracle', 'sqlserver', 'postgresql'].includes(data.databaseType || '') || !data.name?.trim() || !data.host?.trim() || !data.database?.trim() || !data.username?.trim() || (requirePassword && !data.password)) throw new Error('Nome, tipo, banco, host, porta, base, usuário e senha são obrigatórios.');
   const port = Number(data.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('A porta deve estar entre 1 e 65535.');
-  return { name: data.name!.trim(), databaseType: data.databaseType!, host: data.host!.trim(), port, database: data.database!.trim(), username: data.username!.trim(), ...(data.password ? { password: data.password } : {}) };
+  return { name: data.name!.trim(), environmentType: data.environmentType!, databaseType: data.databaseType!, host: data.host!.trim(), port, database: data.database!.trim(), username: data.username!.trim(), ...(data.password ? { password: data.password } : {}) };
 }
-function publicConnection(id: string, data: StoredConnection) { const { password, ...connection } = data; return { id, ...connection, hasPassword: Boolean(password), createdAt: data.createdAt && 'toDate' in data.createdAt ? data.createdAt.toDate().toISOString() : undefined }; }
 function safeError(error: unknown) { if (error instanceof Error) return error.message; return String(error); }
 
 async function testConnection(data: Required<ConnectionPayload>) {
@@ -55,13 +37,23 @@ async function testConnection(data: Required<ConnectionPayload>) {
   try { connection = await oracledb.getConnection({ user: data.username, password: data.password, connectString: `${data.host}:${data.port}/${data.database}` }); await connection.execute('SELECT 1 FROM DUAL'); return 'Conexão com Oracle validada com sucesso.'; }
   finally { await connection?.close().catch(() => undefined); }
 }
+function valueFrom(row: Record<string, unknown>, field: string) { const key = Object.keys(row).find(candidate => candidate.toUpperCase() === field); return key ? row[key] : null; }
+function normalizeParameter(row: Record<string, unknown>): ParameterRow { const toStringOrNull = (value: unknown) => value === null || value === undefined ? null : String(value); return { cdParametro: String(valueFrom(row, 'CDPARAMETRO') ?? ''), deParametro: String(valueFrom(row, 'DEPARAMETRO') ?? ''), vlParametro: toStringOrNull(valueFrom(row, 'VLPARAMETRO')), deExplicacao: toStringOrNull(valueFrom(row, 'DEEXPLICACAO')) }; }
+async function queryParameters(data: Required<ConnectionPayload>): Promise<ParameterRow[]> {
+  if (data.databaseType === 'postgresql') { const client = new PgClient({ host: data.host, port: data.port, database: data.database, user: data.username, password: data.password, connectionTimeoutMillis: 10000, ssl: false }); try { await client.connect(); return (await client.query(parameterQuery)).rows.map(row => normalizeParameter(row)); } finally { await client.end().catch(() => undefined); } }
+  if (data.databaseType === 'sqlserver') { const pool = await new sql.ConnectionPool({ server: data.host, port: data.port, database: data.database, user: data.username, password: data.password, options: { encrypt: true, trustServerCertificate: true }, connectionTimeout: 10000, requestTimeout: 30000 }).connect(); try { return (await pool.request().query(parameterQuery)).recordset.map(row => normalizeParameter(row)); } finally { await pool.close(); } }
+  let connection: oracledb.Connection | undefined;
+  try { connection = await oracledb.getConnection({ user: data.username, password: data.password, connectString: `${data.host}:${data.port}/${data.database}` }); const result = await connection.execute<Record<string, unknown>>(parameterQuery, [], { outFormat: oracledb.OUT_FORMAT_OBJECT }); return (result.rows || []).map(normalizeParameter); } finally { await connection?.close().catch(() => undefined); }
+}
+function comparisonConnection(side: CompareSide): Required<ConnectionPayload> { return validate(side) as Required<ConnectionPayload>; }
+function compareParameters(first: ParameterRow[], second: ParameterRow[]) {
+  const firstByCode = new Map(first.map(row => [row.cdParametro, row])); const secondByCode = new Map(second.map(row => [row.cdParametro, row]));
+  return [...new Set([...firstByCode.keys(), ...secondByCode.keys()])].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).map(cdParametro => { const firstRow = firstByCode.get(cdParametro); const secondRow = secondByCode.get(cdParametro); return { cdParametro, deParametro: firstRow?.deParametro ?? secondRow?.deParametro ?? '', deParametroFirst: firstRow?.deParametro ?? null, deParametroSecond: secondRow?.deParametro ?? null, descriptionDifferent: Boolean(firstRow && secondRow && firstRow.deParametro !== secondRow.deParametro), firstExplanation: firstRow?.deExplicacao ?? null, secondExplanation: secondRow?.deExplicacao ?? null, firstValue: firstRow?.vlParametro ?? null, secondValue: secondRow?.vlParametro ?? null, valuesDifferent: firstRow?.vlParametro !== secondRow?.vlParametro, foundInFirst: Boolean(firstRow), foundInSecond: Boolean(secondRow) }; });
+}
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.get('/api/connections', async (_req, res, next) => { try { const snapshot = await connections.orderBy('createdAt', 'desc').get(); res.json({ connections: snapshot.docs.map(doc => publicConnection(doc.id, doc.data() as StoredConnection)) }); } catch (error) { next(error); } });
 app.post('/api/connections/test', async (req, res, next) => { try { const data = validate(req.body); const message = await testConnection(data as Required<ConnectionPayload>); res.json({ ok: true, message }); } catch (error) { next(error); } });
-app.post('/api/connections', async (req, res, next) => { try { const data = validate(req.body); const stored: StoredConnection = { ...data, password: encrypt(data.password!), createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() }; const doc = await connections.add(stored); res.status(201).json({ connection: publicConnection(doc.id, stored) }); } catch (error) { next(error); } });
-app.put('/api/connections/:id', async (req, res, next) => { try { const previous = await connections.doc(req.params.id).get(); if (!previous.exists) return res.status(404).json({ message: 'Conexão não encontrada.' }); const data = validate(req.body, false); const update: StoredConnection = { ...data, updatedAt: admin.firestore.FieldValue.serverTimestamp() }; if (data.password) update.password = encrypt(data.password); else if ((previous.data() as StoredConnection).password) update.password = (previous.data() as StoredConnection).password; await previous.ref.update(update); res.json({ ok: true }); } catch (error) { next(error); } });
-app.delete('/api/connections/:id', async (req, res, next) => { try { await connections.doc(req.params.id).delete(); res.status(204).send(); } catch (error) { next(error); } });
+app.post('/api/compare', async (req, res, next) => { try { const body = req.body as { first?: CompareSide; second?: CompareSide }; const firstConnection = comparisonConnection(body.first || {}); const secondConnection = comparisonConnection(body.second || {}); const firstRows = await queryParameters(firstConnection); const secondRows = await queryParameters(secondConnection); res.json({ rows: compareParameters(firstRows, secondRows), firstCount: firstRows.length, secondCount: secondRows.length }); } catch (error) { next(error); } });
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => { console.error(error); res.status(400).json({ message: safeError(error) }); });
 const port = Number(process.env.PORT || 3333);
 const host = process.env.HOST || '127.0.0.1';
