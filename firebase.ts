@@ -1,5 +1,11 @@
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { addDoc, collection, deleteDoc, doc, getDocs, getFirestore, updateDoc } from 'firebase/firestore';
+
 const projectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'dbcompareconfig-bec7c';
 const apiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCv_NA0-mxOBSYtF_boOJluyV9DO1BHAGo';
+
+const app = getApps().length ? getApp() : initializeApp({ apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` });
+const firestore = getFirestore(app);
 
 const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
@@ -44,36 +50,27 @@ const fromDocument = (document: FirestoreDocument): FirestoreConnection => {
   return { id: document.name.split('/').pop() || '', name: value('name'), environmentType: value('environmentType') as FirestoreConnection['environmentType'], databaseType: value('databaseType') as FirestoreConnection['databaseType'], host: value('host'), port: Number(fields.port?.integerValue || 0), database: value('database'), username: value('username') };
 };
 
-async function request(path: string, options?: RequestInit) {
-  const response = await fetch(`${baseUrl}${path}${path.includes('?') ? '&' : '?'}key=${apiKey}`, { headers: { 'Content-Type': 'application/json' }, ...options });
-  const body = await response.json().catch(() => ({ error: { message: 'Resposta inválida do Firestore.' } }));
-  if (!response.ok) throw new Error(body.error?.message || 'Não foi possível acessar o Firestore.');
-  return body;
-}
-
 export async function listConnections() {
-  const result = await request('/connections');
-  return ((result.documents || []) as FirestoreDocument[]).map(fromDocument).sort((first, second) => first.name.localeCompare(second.name, 'pt-BR'));
+  const result = await getDocs(collection(firestore, 'connections'));
+  return result.docs.map(item => ({ id: item.id, ...item.data() } as FirestoreConnection)).sort((first, second) => first.name.localeCompare(second.name, 'pt-BR'));
 }
 
 export async function createConnection(connection: Omit<FirestoreConnection, 'id'>) {
-  await request('/?collectionId=connections', { method: 'POST', body: JSON.stringify({ fields: fieldsFor(connection) }) });
+  await addDoc(collection(firestore, 'connections'), connection);
 }
 
 export async function updateConnection(connection: FirestoreConnection) {
-  await request(`/connections/${encodeURIComponent(connection.id)}`, { method: 'PATCH', body: JSON.stringify({ fields: fieldsFor(connection) }) });
+  const { id, ...data } = connection;
+  await updateDoc(doc(firestore, 'connections', id), data);
 }
 
 export async function deleteConnection(id: string) {
-  await request(`/connections/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await deleteDoc(doc(firestore, 'connections', id));
 }
 
 /** Atualiza somente a preferência interna de aparência do perfil autenticado. */
 export async function updateUserTheme(userId: string, themePreference: UserThemePreference) {
-  await request(`/users/${encodeURIComponent(userId)}?updateMask.fieldPaths=themePreference`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields: { themePreference: text(themePreference) } }),
-  });
+  await updateDoc(doc(firestore, 'users', userId), { themePreference });
 }
 
 const userFieldsFor = (user: Omit<FirestoreUserProfile, 'id'>) => ({
@@ -88,14 +85,15 @@ const userFromDocument = (document: FirestoreDocument): FirestoreUserProfile => 
 };
 
 export async function listUsers() {
-  const result = await request('/users');
-  return ((result.documents || []) as FirestoreDocument[]).map(userFromDocument).sort((first, second) => first.name.localeCompare(second.name, 'pt-BR'));
+  const result = await getDocs(collection(firestore, 'users'));
+  return result.docs.map(item => ({ id: item.id, ...item.data() } as FirestoreUserProfile)).sort((first, second) => first.name.localeCompare(second.name, 'pt-BR'));
 }
 
 export async function createUser(user: Omit<FirestoreUserProfile, 'id'>) {
-  await request('/?collectionId=users', { method: 'POST', body: JSON.stringify({ fields: userFieldsFor(user) }) });
+  await addDoc(collection(firestore, 'users'), user);
 }
 
 export async function updateUser(user: FirestoreUserProfile) {
-  await request(`/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ fields: userFieldsFor(user) }) });
+  const { id, ...data } = user;
+  await updateDoc(doc(firestore, 'users', id), data);
 }
