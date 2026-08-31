@@ -1876,7 +1876,20 @@ export default function App() {
           ignoredParameters: currentUser.ignoredParameters || [],
         }),
       });
-      setCompareRows(result.rows);
+      // Mantém o filtro também no cliente. Dessa forma, a regra funciona
+      // imediatamente mesmo enquanto alguma máquina ainda usa um Connector
+      // anterior à versão que recebeu o filtro na API.
+      const ignored = new Set(
+        (currentUser.ignoredParameters || []).map((parameter) =>
+          parameter.trim().toLocaleUpperCase(),
+        ),
+      );
+      setCompareRows(
+        result.rows.filter(
+          (row: CompareResult) =>
+            !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
+        ),
+      );
     } catch (error) {
       setCompareRows(null);
       setNotice({
