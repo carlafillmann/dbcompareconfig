@@ -1073,6 +1073,10 @@ function LoginBackground() {
   const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>(
     [],
   );
+  const [trails, setTrails] = useState<{ id: number; x: number; y: number }[]>(
+    [],
+  );
+  const lastTrailAt = useRef(0);
   const move = (event: any) => {
     const width = window.innerWidth || 1;
     const height = window.innerHeight || 1;
@@ -1080,6 +1084,23 @@ function LoginBackground() {
       x: (event.clientX / width - 0.5) * 2,
       y: (event.clientY / height - 0.5) * 2,
     });
+    if (event.buttons && Date.now() - lastTrailAt.current > 26) {
+      const id = Date.now();
+      lastTrailAt.current = id;
+      setTrails((current) => [
+        ...current,
+        {
+          id,
+          x: (event.clientX / width) * 100,
+          y: (event.clientY / height) * 100,
+        },
+      ]);
+      setTimeout(
+        () =>
+          setTrails((current) => current.filter((trail) => trail.id !== id)),
+        550,
+      );
+    }
   };
   const launchData = (event: any) => {
     const id = Date.now();
@@ -1095,21 +1116,23 @@ function LoginBackground() {
       setBursts((current) => current.filter((burst) => burst.id !== id));
     }, 1100);
   };
-  const stack = (className: string, color: "blue" | "green") =>
+  const spriteUri = Image.resolveAssetSource(
+    require("./assets/login-animation-sprite.png"),
+  ).uri;
+  const sprite = (
+    kind: "database" | "die" | "bench",
+    className: string,
+    key?: string,
+    style?: Record<string, string>,
+  ) =>
     createElement(
-      "div",
-      {
-        className: `login-db-stack ${className}`,
-        style: {
-          transform: `translate(${pointer.x * (color === "blue" ? 9 : -7)}px, ${pointer.y * 7}px)`,
-        },
-      },
-      [0, 1, 2].map((disk) =>
-        createElement("span", {
-          className: `login-db-disk login-db-${color}`,
-          key: disk,
-        }),
-      ),
+      "span",
+      { className, key, style },
+      createElement("img", {
+        className: `login-sprite-image login-sprite-${kind}`,
+        src: spriteUri,
+        alt: "",
+      }),
     );
   return createElement(
     "div",
@@ -1123,43 +1146,62 @@ function LoginBackground() {
       "style",
       null,
       `
-        @keyframes loginFloat { 0%,100% { margin-top: 0; } 50% { margin-top: -16px; } }
+        @keyframes loginDrift { 0%,100% { transform:translate(var(--mouse-x),var(--mouse-y)) rotate(-3deg); } 50% { transform:translate(calc(var(--mouse-x) + 9px),calc(var(--mouse-y) - 13px)) rotate(4deg); } }
         @keyframes loginOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes loginPop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1.1); } }
+        @keyframes loginPop { 0% { opacity:0; transform:translate(-50%,-50%) scale(.35) rotate(0deg); } 18% { opacity:1; } 100% { opacity:0; transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y))) scale(.85) rotate(var(--spin)); } }
+        @keyframes loginTrail { 0% { opacity:.9; transform:translate(-50%,-50%) scaleX(.35); } 100% { opacity:0; transform:translate(-50%,-50%) scaleX(1.8); } }
         .login-animated-background { position:absolute; inset:0; overflow:hidden; background:radial-gradient(circle at 20% 20%, rgba(91,142,255,.17), transparent 31%), radial-gradient(circle at 85% 74%, rgba(110,201,103,.14), transparent 28%), linear-gradient(135deg,#f8fbff 0%,#f2f6ff 55%,#f8fcfa 100%); }
         .login-animated-background::before { content:""; position:absolute; inset:0; opacity:.48; background-image:linear-gradient(rgba(85,115,175,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(85,115,175,.07) 1px,transparent 1px); background-size:34px 34px; mask-image:linear-gradient(to bottom,transparent,black 20%,black 80%,transparent); }
-        .login-db-stack { position:absolute; display:flex; flex-direction:column; gap:5px; width:104px; animation:loginFloat 6s ease-in-out infinite; transition:transform .25s ease-out; filter:drop-shadow(0 17px 15px rgba(20,50,90,.13)); }
-        .login-db-stack.stack-one { left:8%; top:16%; animation-delay:-1.4s; } .login-db-stack.stack-two { right:9%; bottom:14%; animation-delay:-3.6s; }
-        .login-db-disk { height:27px; border-radius:50% 50% 13px 13px; border:1px solid rgba(255,255,255,.55); position:relative; overflow:hidden; }
-        .login-db-disk::after { content:""; position:absolute; left:0; right:0; top:7px; border-top:1px solid rgba(255,255,255,.45); }
-        .login-db-blue { background:linear-gradient(135deg,#73b6ff,#2767c4 68%,#1a4b98); } .login-db-green { background:linear-gradient(135deg,#b0e97e,#58aa5b 62%,#287447); }
-        .login-data-node { position:absolute; width:12px; height:12px; border-radius:4px; background:#fff; box-shadow:0 3px 11px rgba(39,103,196,.2); animation:loginFloat 4s ease-in-out infinite; }
-        .login-node-one { left:30%; bottom:19%; animation-delay:-1s; } .login-node-two { right:25%; top:22%; background:#d9f5c8; animation-delay:-2.2s; } .login-node-three { right:14%; top:44%; width:8px; height:8px; background:#c9ddff; animation-delay:-.4s; }
+        .login-sprite-frame { display:block; overflow:hidden; position:absolute; filter:drop-shadow(0 8px 9px rgba(50,93,161,.13)); } .login-sprite-image { display:block; height:100%; width:auto; max-width:none; } .login-sprite-database { transform:translateX(0); } .login-sprite-die { transform:translateX(-33.3333%); } .login-sprite-bench { transform:translateX(-66.6667%); }
+        .login-floating-db { width:54px; height:54px; animation:loginDrift var(--duration) ease-in-out infinite; pointer-events:none; }
+        .login-float-one { left:8%; top:14%; --duration:6.4s; } .login-float-two { left:19%; bottom:17%; width:46px; height:46px; --duration:7.3s; animation-delay:-2.1s; } .login-float-three { right:11%; top:17%; width:50px; height:50px; --duration:6.9s; animation-delay:-3.7s; } .login-float-four { right:7%; bottom:14%; width:62px; height:62px; --duration:7.8s; animation-delay:-1.5s; } .login-float-five { left:33%; top:11%; width:38px; height:38px; --duration:5.9s; animation-delay:-4s; } .login-float-six { right:31%; bottom:12%; width:40px; height:40px; --duration:6.7s; animation-delay:-.9s; }
         .login-orbit { position:absolute; width:250px; height:250px; left:50%; top:50%; margin-left:-125px; margin-top:-125px; border:1px solid rgba(70,116,206,.12); border-radius:50%; animation:loginOrbit 28s linear infinite; }
         .login-orbit::before,.login-orbit::after { content:""; position:absolute; width:11px; height:11px; border-radius:50%; background:#6b5cf6; box-shadow:0 0 0 6px rgba(107,92,246,.1); } .login-orbit::before { top:12px; left:33px; } .login-orbit::after { right:16px; bottom:52px; background:#69bb68; box-shadow:0 0 0 6px rgba(105,187,104,.1); }
-        .login-data-pop { position:absolute; z-index:1; width:23px; height:23px; border-radius:7px; color:#fff; background:linear-gradient(135deg,#7568fa,#4a85e7); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; box-shadow:0 8px 16px rgba(80,91,220,.24); animation:loginPop 1.05s ease-out forwards; }
-        .login-data-pop:nth-of-type(3n) { --x:-52px; --y:-68px; background:linear-gradient(135deg,#7fcf70,#48a06b); } .login-data-pop:nth-of-type(3n + 1) { --x:58px; --y:-54px; } .login-data-pop:nth-of-type(3n + 2) { --x:18px; --y:62px; background:linear-gradient(135deg,#64aafb,#4868dc); }
-        @media (max-width:720px) { .login-db-stack { opacity:.55; transform:scale(.75) !important; } .login-orbit { opacity:.55; } }
+        .login-explosion { width:42px; height:42px; z-index:2; animation:loginPop 1.05s ease-out forwards; pointer-events:none; } .login-golden-trail { position:absolute; z-index:3; width:20px; height:2px; border-radius:999px; background:linear-gradient(90deg,rgba(205,159,54,0),#d5a937,rgba(255,232,151,.9)); box-shadow:0 0 7px rgba(213,169,55,.65); animation:loginTrail .52s ease-out forwards; pointer-events:none; }
+        @media (max-width:720px) { .login-floating-db { opacity:.58; } .login-orbit { opacity:.55; } .login-float-five,.login-float-six { display:none; } }
       `,
     ),
-    stack("stack-one", "blue"),
-    stack("stack-two", "green"),
-    createElement("span", { className: "login-data-node login-node-one" }),
-    createElement("span", { className: "login-data-node login-node-two" }),
-    createElement("span", { className: "login-data-node login-node-three" }),
+    ...["one", "two", "three", "four", "five", "six"].map((position) =>
+      sprite(
+        "database",
+        `login-sprite-frame login-floating-db login-float-${position}`,
+        position,
+        {
+          "--mouse-x": `${pointer.x * 7}px`,
+          "--mouse-y": `${pointer.y * 5}px`,
+        },
+      ),
+    ),
     createElement("span", { className: "login-orbit" }),
     ...bursts.flatMap((burst) =>
-      ["01", "<> ", "•", "{}", "DB", "+"].map((label, index) =>
-        createElement(
-          "span",
+      [
+        [-70, -55, "die"],
+        [70, -46, "bench"],
+        [-58, 55, "bench"],
+        [53, 61, "die"],
+        [-18, -83, "die"],
+        [22, 83, "bench"],
+      ].map(([x, y, kind], index) =>
+        sprite(
+          kind as "die" | "bench",
+          "login-sprite-frame login-explosion",
+          `${burst.id}-${index}`,
           {
-            className: "login-data-pop",
-            key: `${burst.id}-${index}`,
-            style: { left: `${burst.x}%`, top: `${burst.y}%` },
+            left: `${burst.x}%`,
+            top: `${burst.y}%`,
+            "--x": `${x}px`,
+            "--y": `${y}px`,
+            "--spin": `${index % 2 ? 18 : -18}deg`,
           },
-          label,
         ),
       ),
+    ),
+    ...trails.map((trail) =>
+      createElement("span", {
+        className: "login-golden-trail",
+        key: trail.id,
+        style: { left: `${trail.x}%`, top: `${trail.y}%` },
+      }),
     ),
   );
 }
