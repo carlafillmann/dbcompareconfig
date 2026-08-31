@@ -1921,14 +1921,16 @@ function ParameterGroupsPanel({
                 ]}
                 onPress={() => edit(group)}
               >
-                <View>
+                <View style={styles.groupListContent}>
                   <Text style={styles.connectionName}>{group.description}</Text>
-                  <Text style={styles.connectionSub}>
+                  <Text
+                    style={[styles.connectionSub, styles.groupCodesPreview]}
+                  >
                     {group.parameterCodes.join(", ")}
                   </Text>
                 </View>
-                <Text style={styles.userState}>
-                  {group.parameterCodes.length}
+                <Text style={[styles.userState, styles.groupParameterCount]}>
+                  {group.parameterCodes.length} parâmetros
                 </Text>
               </Pressable>
             ))}
@@ -3613,6 +3615,9 @@ const styles = StyleSheet.create(
       },
       userListItemActive: { backgroundColor: "#F4F3FF", borderRadius: 8 },
       userState: { color: "#027A48", fontSize: 11, fontWeight: "800" },
+      groupListContent: { flex: 1, minWidth: 0 },
+      groupCodesPreview: { flexShrink: 1, lineHeight: 18 },
+      groupParameterCount: { flexShrink: 0, marginTop: 1 },
       userStateInactive: { color: "#B42318" },
       userForm: { flex: 1 },
       userFormTitle: {
