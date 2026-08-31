@@ -739,33 +739,8 @@ function CompareResults({
   return (
     <View style={styles.resultsCard}>
       <View style={styles.resultsHeading}>
-        <View>
+        <View style={styles.resultsSummary}>
           <Text style={styles.sectionTitle}>Resultado da comparação</Text>
-          <Text style={styles.sectionSubtitle}>
-            {rows.filter(isDifferent).length} parâmetros com diferença
-          </Text>
-        </View>
-        <View style={styles.resultControls}>
-          <Pressable
-            onPress={exportCsv}
-            style={styles.excelButton}
-            accessibilityLabel="Exportar resultado para Excel"
-          >
-            <Text style={styles.excelText}>XLS</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => onOnlyDifferentChange(!onlyDifferent)}
-            style={styles.checkboxLine}
-          >
-            <View
-              style={[styles.checkbox, onlyDifferent && styles.checkboxChecked]}
-            >
-              {onlyDifferent && <Text style={styles.checkmark}>✓</Text>}
-            </View>
-            <Text style={styles.checkboxText}>
-              Exibir apenas parâmetros com valores distintos
-            </Text>
-          </Pressable>
           {!webservice && onParameterGroupChange && (
             <View style={styles.parameterGroupFilter}>
               <Text style={styles.parameterGroupLabel}>
@@ -789,6 +764,34 @@ function CompareResults({
               </View>
             </View>
           )}
+        </View>
+        <View style={styles.resultControls}>
+          <Pressable
+            onPress={() => onOnlyDifferentChange(!onlyDifferent)}
+            style={styles.checkboxLine}
+          >
+            <View
+              style={[styles.checkbox, onlyDifferent && styles.checkboxChecked]}
+            >
+              {onlyDifferent && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.checkboxText}>
+              Exibir apenas parâmetros com valores distintos
+            </Text>
+          </Pressable>
+          <View style={styles.resultsCountLine}>
+            <Text style={styles.resultsCountIcon}>◫⌕</Text>
+            <Text style={styles.sectionSubtitle}>
+              {rows.filter(isDifferent).length} parâmetros com diferença
+            </Text>
+            <Pressable
+              onPress={exportCsv}
+              style={styles.excelButton}
+              accessibilityLabel="Exportar resultado para Excel"
+            >
+              <Text style={styles.excelText}>XLS</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
       <ScrollView horizontal>
@@ -3448,7 +3451,7 @@ const styles = StyleSheet.create(
         borderBottomColor: "#EAECF0",
         flexDirection: "row",
         justifyContent: "space-between",
-        alignItems: "center",
+        alignItems: "flex-start",
         gap: 8,
       },
       userListItemActive: { backgroundColor: "#F4F3FF", borderRadius: 8 },
@@ -4160,19 +4163,25 @@ const styles = StyleSheet.create(
         backgroundColor: "#FFF",
       },
       resultControls: {
-        flexDirection: "row-reverse",
-        alignItems: "center",
-        gap: 14,
+        alignItems: "flex-end",
+        gap: 7,
       },
-      parameterGroupFilter: { width: 260, marginTop: 8 },
+      resultsSummary: { gap: 16 },
+      resultsCountLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+      resultsCountIcon: { color: "#667085", fontSize: 19, fontWeight: "700" },
+      parameterGroupFilter: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+      },
       parameterGroupLabel: {
         color: "#475467",
         fontSize: 12,
         fontWeight: "600",
-        marginBottom: 5,
       },
       parameterGroupPicker: {
-        height: 36,
+        width: 250,
+        height: 30,
         borderColor: "#D0D5DD",
         borderWidth: 1,
         borderRadius: 7,
