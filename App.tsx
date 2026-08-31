@@ -495,9 +495,9 @@ function CompareOutput(
     comparisonVersion: number;
   },
 ) {
-  const [tab, setTab] = useState<"system" | "webservices" | "features">(
-    "system",
-  );
+  const [tab, setTab] = useState<
+    "system" | "webservices" | "features" | "judicialBodies"
+  >("system");
   return (
     <View>
       <View style={styles.compareSubtabs}>
@@ -549,6 +549,22 @@ function CompareOutput(
             Features
           </Text>
         </Pressable>
+        <Pressable
+          style={[
+            styles.compareSubtab,
+            tab === "judicialBodies" && styles.compareSubtabActive,
+          ]}
+          onPress={() => setTab("judicialBodies")}
+        >
+          <Text
+            style={[
+              styles.compareSubtabText,
+              tab === "judicialBodies" && styles.compareSubtabTextActive,
+            ]}
+          >
+            Órgãos Judiciais
+          </Text>
+        </Pressable>
       </View>
       <View style={tab === "system" ? undefined : styles.hiddenTab}>
         <CompareResults {...props} />
@@ -575,6 +591,9 @@ function CompareOutput(
           onDescriptionPress={props.onExplanationPress}
           refreshKey={props.comparisonVersion}
         />
+      </View>
+      <View style={tab === "judicialBodies" ? undefined : styles.hiddenTab}>
+        <ConstructionPanel title="Órgãos Judiciais" />
       </View>
     </View>
   );
