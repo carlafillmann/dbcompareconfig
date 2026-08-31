@@ -780,7 +780,11 @@ function CompareResults({
             </Text>
           </Pressable>
           <View style={styles.resultsCountLine}>
-            <Text style={styles.resultsCountIcon}>◫⌕</Text>
+            <Image
+              source={require("./assets/database-search.png")}
+              style={styles.resultsCountIcon}
+              resizeMode="contain"
+            />
             <Text style={styles.sectionSubtitle}>
               {rows.filter(isDifferent).length} parâmetros com diferença
             </Text>
@@ -4248,8 +4252,8 @@ const styles = StyleSheet.create(
         gap: 7,
       },
       resultsSummary: { gap: 16 },
-      resultsCountLine: { flexDirection: "row", alignItems: "center", gap: 8 },
-      resultsCountIcon: { color: "#667085", fontSize: 19, fontWeight: "700" },
+      resultsCountLine: { flexDirection: "row", alignSelf: "stretch", alignItems: "center", gap: 8 },
+      resultsCountIcon: { width: 27, height: 27 },
       parameterGroupFilter: {
         flexDirection: "row",
         alignItems: "center",
