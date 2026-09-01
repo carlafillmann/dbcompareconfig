@@ -1070,9 +1070,37 @@ function CompareResults({
 
 function LoginBackground() {
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
-  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>(
-    [],
+  const [floatingDatabases] = useState(() =>
+    Array.from({ length: 16 }, (_, id) => ({
+      id,
+      x: 3 + Math.random() * 91,
+      y: 4 + Math.random() * 88,
+      size: 34 + Math.round(Math.random() * 24),
+      duration: 24 + Math.random() * 10,
+      delay: -Math.random() * 34,
+      x1: Math.round((Math.random() - 0.5) * 260),
+      y1: Math.round((Math.random() - 0.5) * 180),
+      x2: Math.round((Math.random() - 0.5) * 260),
+      y2: Math.round((Math.random() - 0.5) * 180),
+      x3: Math.round((Math.random() - 0.5) * 260),
+      y3: Math.round((Math.random() - 0.5) * 180),
+    })),
   );
+  const [bursts, setBursts] = useState<{
+    id: number;
+    x: number;
+    y: number;
+    pieces: {
+      kind: "die" | "bench";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      x3: number;
+      y3: number;
+      spin: number;
+    }[];
+  }[]>([]);
   const [trails, setTrails] = useState<{ id: number; x: number; y: number }[]>(
     [],
   );
@@ -1104,17 +1132,31 @@ function LoginBackground() {
   };
   const launchData = (event: any) => {
     const id = Date.now();
+    const pieces = Array.from({ length: 8 }, (_, index) => {
+      const point = () => Math.round((Math.random() - 0.5) * 420);
+      return {
+        kind: (index % 2 ? "bench" : "die") as "die" | "bench",
+        x1: point(),
+        y1: point(),
+        x2: point(),
+        y2: point(),
+        x3: point(),
+        y3: point(),
+        spin: Math.round((Math.random() - 0.5) * 180),
+      };
+    });
     setBursts((current) => [
       ...current,
       {
         id,
         x: (event.clientX / (window.innerWidth || 1)) * 100,
         y: (event.clientY / (window.innerHeight || 1)) * 100,
+        pieces,
       },
     ]);
     setTimeout(() => {
       setBursts((current) => current.filter((burst) => burst.id !== id));
-    }, 1100);
+    }, 10100);
   };
   const spriteAsset = require("./assets/login-animation-sprite.png");
   const spriteUri =
@@ -1148,27 +1190,41 @@ function LoginBackground() {
       "style",
       null,
       `
-        @keyframes loginDrift { 0%,100% { transform:translate(var(--mouse-x),var(--mouse-y)) rotate(-3deg); } 50% { transform:translate(calc(var(--mouse-x) + 9px),calc(var(--mouse-y) - 13px)) rotate(4deg); } }
+        @keyframes loginWander { 0%,100% { transform:translate(var(--mouse-x),var(--mouse-y)) rotate(-3deg); } 25% { transform:translate(calc(var(--mouse-x) + var(--x1)),calc(var(--mouse-y) + var(--y1))) rotate(4deg); } 50% { transform:translate(calc(var(--mouse-x) + var(--x2)),calc(var(--mouse-y) + var(--y2))) rotate(-2deg); } 75% { transform:translate(calc(var(--mouse-x) + var(--x3)),calc(var(--mouse-y) + var(--y3))) rotate(3deg); } }
         @keyframes loginOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes loginPop { 0% { opacity:0; transform:translate(-50%,-50%) scale(.35) rotate(0deg); } 18% { opacity:1; } 100% { opacity:0; transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y))) scale(.85) rotate(var(--spin)); } }
+        @keyframes loginPop { 0% { opacity:0; transform:translate(-50%,-50%) scale(.35) rotate(0deg); } 8% { opacity:1; } 35% { opacity:1; transform:translate(calc(-50% + var(--x1)),calc(-50% + var(--y1))) scale(.9) rotate(calc(var(--spin) * .35)); } 70% { opacity:.95; transform:translate(calc(-50% + var(--x2)),calc(-50% + var(--y2))) scale(1) rotate(calc(var(--spin) * .7)); } 100% { opacity:0; transform:translate(calc(-50% + var(--x3)),calc(-50% + var(--y3))) scale(.82) rotate(var(--spin)); } }
         @keyframes loginTrail { 0% { opacity:.9; transform:translate(-50%,-50%) scaleX(.35); } 100% { opacity:0; transform:translate(-50%,-50%) scaleX(1.8); } }
         .login-animated-background { position:absolute; inset:0; overflow:hidden; background:radial-gradient(circle at 20% 20%, rgba(91,142,255,.17), transparent 31%), radial-gradient(circle at 85% 74%, rgba(110,201,103,.14), transparent 28%), linear-gradient(135deg,#f8fbff 0%,#f2f6ff 55%,#f8fcfa 100%); }
         .login-animated-background::before { content:""; position:absolute; inset:0; opacity:.48; background-image:linear-gradient(rgba(85,115,175,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(85,115,175,.07) 1px,transparent 1px); background-size:34px 34px; mask-image:linear-gradient(to bottom,transparent,black 20%,black 80%,transparent); }
         .login-sprite-frame { display:block; overflow:hidden; position:absolute; filter:drop-shadow(0 8px 9px rgba(50,93,161,.13)); } .login-sprite-image { display:block; height:100%; width:auto; max-width:none; } .login-sprite-database { transform:translateX(0); } .login-sprite-die { transform:translateX(-33.3333%); } .login-sprite-bench { transform:translateX(-66.6667%); }
         .login-floating-db { width:54px; height:54px; animation:loginDrift var(--duration) ease-in-out infinite; pointer-events:none; }
-        .login-float-one { left:8%; top:14%; --duration:6.4s; } .login-float-two { left:19%; bottom:17%; width:46px; height:46px; --duration:7.3s; animation-delay:-2.1s; } .login-float-three { right:11%; top:17%; width:50px; height:50px; --duration:6.9s; animation-delay:-3.7s; } .login-float-four { right:7%; bottom:14%; width:62px; height:62px; --duration:7.8s; animation-delay:-1.5s; } .login-float-five { left:33%; top:11%; width:38px; height:38px; --duration:5.9s; animation-delay:-4s; } .login-float-six { right:31%; bottom:12%; width:40px; height:40px; --duration:6.7s; animation-delay:-.9s; }
+        .login-float-one { left:8%; top:14%; --duration:4.8s; --drift-start-x:-28px; --drift-start-y:14px; --drift-end-x:138px; --drift-end-y:-19px; } .login-float-two { left:19%; bottom:17%; width:46px; height:46px; --duration:5.4s; --drift-start-x:-80px; --drift-start-y:-16px; --drift-end-x:94px; --drift-end-y:22px; animation-delay:-2.1s; } .login-float-three { right:11%; top:17%; width:50px; height:50px; --duration:5.1s; --drift-start-x:74px; --drift-start-y:12px; --drift-end-x:-112px; --drift-end-y:-25px; animation-delay:-3.7s; } .login-float-four { right:7%; bottom:14%; width:62px; height:62px; --duration:5.7s; --drift-start-x:58px; --drift-start-y:-18px; --drift-end-x:-102px; --drift-end-y:20px; animation-delay:-1.5s; } .login-float-five { left:33%; top:11%; width:38px; height:38px; --duration:4.6s; --drift-start-x:-62px; --drift-start-y:18px; --drift-end-x:101px; --drift-end-y:-14px; animation-delay:-4s; } .login-float-six { right:31%; bottom:12%; width:40px; height:40px; --duration:5s; --drift-start-x:60px; --drift-start-y:-12px; --drift-end-x:-96px; --drift-end-y:26px; animation-delay:-.9s; }
+        .login-float-seven { left:3%; top:42%; width:36px; height:36px; --duration:4.9s; --drift-start-x:-28px; --drift-start-y:-18px; --drift-end-x:126px; --drift-end-y:16px; animation-delay:-1.2s; } .login-float-eight { left:27%; top:31%; width:44px; height:44px; --duration:5.3s; --drift-start-x:-78px; --drift-start-y:14px; --drift-end-x:88px; --drift-end-y:-18px; animation-delay:-3.2s; } .login-float-nine { left:43%; bottom:8%; width:34px; height:34px; --duration:4.7s; --drift-start-x:-58px; --drift-start-y:-14px; --drift-end-x:105px; --drift-end-y:20px; animation-delay:-.6s; } .login-float-ten { left:49%; top:8%; width:48px; height:48px; --duration:5.5s; --drift-start-x:-84px; --drift-start-y:15px; --drift-end-x:92px; --drift-end-y:-20px; animation-delay:-4.5s; } .login-float-eleven { right:24%; top:38%; width:37px; height:37px; --duration:4.8s; --drift-start-x:64px; --drift-start-y:-16px; --drift-end-x:-98px; --drift-end-y:17px; animation-delay:-2.8s; } .login-float-twelve { right:2%; top:48%; width:45px; height:45px; --duration:5.2s; --drift-start-x:54px; --drift-start-y:18px; --drift-end-x:-116px; --drift-end-y:-15px; animation-delay:-.3s; } .login-float-thirteen { left:12%; bottom:6%; width:42px; height:42px; --duration:5.6s; --drift-start-x:-42px; --drift-start-y:-19px; --drift-end-x:122px; --drift-end-y:19px; animation-delay:-3.9s; } .login-float-fourteen { left:39%; top:62%; width:39px; height:39px; --duration:4.5s; --drift-start-x:-74px; --drift-start-y:17px; --drift-end-x:91px; --drift-end-y:-14px; animation-delay:-1.7s; } .login-float-fifteen { right:16%; bottom:31%; width:35px; height:35px; --duration:5.1s; --drift-start-x:73px; --drift-start-y:-12px; --drift-end-x:-93px; --drift-end-y:23px; animation-delay:-4.2s; } .login-float-sixteen { right:42%; top:46%; width:43px; height:43px; --duration:4.9s; --drift-start-x:60px; --drift-start-y:16px; --drift-end-x:-106px; --drift-end-y:-18px; animation-delay:-2.4s; }
+        .login-floating-db { pointer-events:none; animation:loginWander var(--wander-duration) linear var(--delay) infinite; }
         .login-orbit { position:absolute; width:250px; height:250px; left:50%; top:50%; margin-left:-125px; margin-top:-125px; border:1px solid rgba(70,116,206,.12); border-radius:50%; animation:loginOrbit 28s linear infinite; }
         .login-orbit::before,.login-orbit::after { content:""; position:absolute; width:11px; height:11px; border-radius:50%; background:#6b5cf6; box-shadow:0 0 0 6px rgba(107,92,246,.1); } .login-orbit::before { top:12px; left:33px; } .login-orbit::after { right:16px; bottom:52px; background:#69bb68; box-shadow:0 0 0 6px rgba(105,187,104,.1); }
-        .login-explosion { width:42px; height:42px; z-index:2; animation:loginPop 1.05s ease-out forwards; pointer-events:none; } .login-golden-trail { position:absolute; z-index:3; width:20px; height:2px; border-radius:999px; background:linear-gradient(90deg,rgba(205,159,54,0),#d5a937,rgba(255,232,151,.9)); box-shadow:0 0 7px rgba(213,169,55,.65); animation:loginTrail .52s ease-out forwards; pointer-events:none; }
-        @media (max-width:720px) { .login-floating-db { opacity:.58; } .login-orbit { opacity:.55; } .login-float-five,.login-float-six { display:none; } }
+        .login-explosion { width:42px; height:42px; z-index:2; animation:loginPop 10s ease-in-out forwards; pointer-events:none; } .login-golden-trail { position:absolute; z-index:3; width:20px; height:2px; border-radius:999px; background:linear-gradient(90deg,rgba(205,159,54,0),#d5a937,rgba(255,232,151,.9)); box-shadow:0 0 7px rgba(213,169,55,.65); animation:loginTrail .52s ease-out forwards; pointer-events:none; }
+        @media (max-width:720px) { .login-floating-db { opacity:.58; } .login-orbit { opacity:.55; } .login-float-five,.login-float-six,.login-float-ten,.login-float-fourteen,.login-float-sixteen { display:none; } }
       `,
     ),
-    ...["one", "two", "three", "four", "five", "six"].map((position) =>
+    ...floatingDatabases.map((database) =>
       sprite(
         "database",
-        `login-sprite-frame login-floating-db login-float-${position}`,
-        position,
+        "login-sprite-frame login-floating-db",
+        String(database.id),
         {
+          left: `${database.x}%`,
+          top: `${database.y}%`,
+          width: `${database.size}px`,
+          height: `${database.size}px`,
+          "--wander-duration": `${database.duration}s`,
+          "--delay": `${database.delay}s`,
+          "--x1": `${database.x1}px`,
+          "--y1": `${database.y1}px`,
+          "--x2": `${database.x2}px`,
+          "--y2": `${database.y2}px`,
+          "--x3": `${database.x3}px`,
+          "--y3": `${database.y3}px`,
           "--mouse-x": `${pointer.x * 7}px`,
           "--mouse-y": `${pointer.y * 5}px`,
         },
@@ -1176,24 +1232,21 @@ function LoginBackground() {
     ),
     createElement("span", { className: "login-orbit" }),
     ...bursts.flatMap((burst) =>
-      [
-        [-70, -55, "die"],
-        [70, -46, "bench"],
-        [-58, 55, "bench"],
-        [53, 61, "die"],
-        [-18, -83, "die"],
-        [22, 83, "bench"],
-      ].map(([x, y, kind], index) =>
+      burst.pieces.map((piece, index) =>
         sprite(
-          kind as "die" | "bench",
+          piece.kind,
           "login-sprite-frame login-explosion",
           `${burst.id}-${index}`,
           {
             left: `${burst.x}%`,
             top: `${burst.y}%`,
-            "--x": `${x}px`,
-            "--y": `${y}px`,
-            "--spin": `${index % 2 ? 18 : -18}deg`,
+            "--x1": `${piece.x1}px`,
+            "--y1": `${piece.y1}px`,
+            "--x2": `${piece.x2}px`,
+            "--y2": `${piece.y2}px`,
+            "--x3": `${piece.x3}px`,
+            "--y3": `${piece.y3}px`,
+            "--spin": `${piece.spin}deg`,
           },
         ),
       ),

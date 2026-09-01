@@ -8,5 +8,9 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["App.tsx", "server/src/**/*.ts"]
+  "include": [
+    "App.tsx",
+    "server/src/**/*.ts"
+  ],
+  "extends": "expo/tsconfig.base"
 }
