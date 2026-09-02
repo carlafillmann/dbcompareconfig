@@ -3157,6 +3157,16 @@ export default function App() {
       return;
     if (Platform.OS === "web")
       window.localStorage.removeItem("dbcompare-session");
+    setCompareRows(null);
+    setGeneralComparisonRows([]);
+    setGeneralComparisonCriteria([]);
+    setGeneralComparisonLoaded(false);
+    setGeneralComparisonLoading(false);
+    setGeneralComparisonError("");
+    setCompareSelectionCollapsed(false);
+    setLeftCompare({ connectionId: "", username: "", password: "" });
+    setRightCompare({ connectionId: "", username: "", password: "" });
+    setComparisonVersion(0);
     setCurrentUser(null);
   };
   if (!currentUser) return <LoginScreen onLogin={login} />;
