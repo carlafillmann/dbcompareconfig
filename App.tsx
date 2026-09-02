@@ -2722,6 +2722,24 @@ export default function App() {
       throw new Error(body.message || "Não foi possível concluir a operação.");
     return body;
   };
+  const checkConnector = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/api/health`);
+      const body = await response.json().catch(() => ({}));
+      const version = typeof body.version === "string" ? body.version : "";
+      const outdated =
+        response.ok &&
+        Boolean(latestApiVersion) &&
+        version !== latestApiVersion;
+      setConnectorOnline(response.ok);
+      setConnectorOutdated(outdated);
+      return { online: response.ok, version, outdated };
+    } catch {
+      setConnectorOnline(false);
+      setConnectorOutdated(false);
+      return { online: false, version: "", outdated: false };
+    }
+  };
   const loadConnections = async () => {
     if (!currentUser) {
       setConnections([]);
@@ -2885,21 +2903,6 @@ export default function App() {
     window.localStorage.setItem("dbcompare-theme", theme);
   }, [theme]);
   useEffect(() => {
-    const checkConnector = async () => {
-      try {
-        const response = await fetch(`${apiUrl}/api/health`);
-        setConnectorOnline(response.ok);
-        const body = await response.json().catch(() => ({}));
-        setConnectorOutdated(
-          response.ok &&
-            Boolean(latestApiVersion) &&
-            body.version !== latestApiVersion,
-        );
-      } catch {
-        setConnectorOnline(false);
-        setConnectorOutdated(false);
-      }
-    };
     void checkConnector();
     const interval = setInterval(checkConnector, 15000);
     return () => clearInterval(interval);
@@ -3125,6 +3128,15 @@ export default function App() {
         );
       setComparing(true);
       setNotice(null);
+      const connector = await checkConnector();
+      if (!connector.online)
+        throw new Error(
+          "A consulta não pode ser realizada porque a API \"DBCompare Connector\" não está instalada ou não está em execução neste computador.",
+        );
+      if (connector.outdated)
+        throw new Error(
+          `A consulta não pode ser realizada porque a API \"DBCompare Connector\" está desatualizada. Versão atual: ${latestApiVersion}. Versão instalada: ${connector.version || "não informada"}.`,
+        );
       const result = await request("/api/compare", {
         method: "POST",
         body: JSON.stringify({
