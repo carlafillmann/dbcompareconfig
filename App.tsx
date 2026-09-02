@@ -88,7 +88,7 @@ const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   "http://127.0.0.1:3333";
 const connectorDownloadUrl =
-  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.4/DBCompare.Connector.Setup.1.0.4.exe";
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.5/DBCompare.Connector.Setup.1.0.5.exe";
 const environments: EnvironmentType[] = [
   "Produção",
   "Homologação",
@@ -2754,11 +2754,13 @@ export default function App() {
     return result.rows || [];
   };
   const compareBases = async () => {
+    let first: Connection | undefined;
+    let second: Connection | undefined;
     try {
-      const first = connections.find(
+      first = connections.find(
         (connection) => connection.id === leftCompare.connectionId,
       );
-      const second = connections.find(
+      second = connections.find(
         (connection) => connection.id === rightCompare.connectionId,
       );
       if (!first || !second || !leftCompare.password || !rightCompare.password)
@@ -2801,10 +2803,17 @@ export default function App() {
       setComparisonVersion((version) => version + 1);
     } catch (error) {
       setCompareRows(null);
+      const originalError = errorText(error);
+      const connectorUnavailable =
+        /failed to fetch|network request failed|networkerror/i.test(
+          originalError,
+        );
       setNotice({
         type: "error",
         title: "Não foi possível comparar",
-        message: errorText(error),
+        message: connectorUnavailable
+          ? `Não foi possível acessar o DBCompare Connector. Verifique se ele está em execução neste computador.\nConexões envolvidas: ${first?.name || "Base de Dados 1"} e ${second?.name || "Base de Dados 2"}.\nErro original: ${originalError}`
+          : originalError,
       });
     } finally {
       setComparing(false);

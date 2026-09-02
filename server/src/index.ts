@@ -38,7 +38,7 @@ const webServicesQuery =
 const webServiceParametersQuery =
   "SELECT CDWEBSERVICES, DEPARAMETRO, DEDESCRICAO, VLPARAMETRO FROM ESPJWSPARAMETROS WHERE CDWEBSERVICES = ";
 const featuresQuery = "SELECT NMCONFIGFEATURE, VLCONFIG FROM ESPJCONFIGFEATURE";
-const apiVersion = "1.0.4";
+const apiVersion = "1.0.5";
 
 const app = express();
 const allowedOrigins = (
@@ -99,6 +99,25 @@ function validate(body: unknown, requirePassword = true): ConnectionPayload {
 function safeError(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+function connectionErrorMessage(
+  label: string,
+  connection: Required<ConnectionPayload>,
+  error: unknown,
+) {
+  const originalError = safeError(error);
+  const normalizedError = originalError.toLocaleLowerCase();
+  const reason =
+    /timeout|etimedout/.test(normalizedError)
+      ? "O tempo para conectar à base foi esgotado"
+      : /econnrefused|connection refused|connect error/.test(normalizedError)
+        ? "A conexão foi recusada pelo servidor"
+        : /authentication|password|login failed|ora-01017|28p01/.test(
+              normalizedError,
+            )
+          ? "Não foi possível autenticar com o usuário e a senha informados"
+          : "Não foi possível consultar esta conexão";
+  return `${reason}.\nConexão com falha: ${label} — ${connection.name} (${connection.databaseType}, ${connection.host}:${connection.port}/${connection.database}).\nErro original: ${originalError}`;
 }
 
 async function testConnection(data: Required<ConnectionPayload>) {
@@ -448,10 +467,26 @@ app.post("/api/compare", async (req, res, next) => {
             .filter(Boolean)
         : [],
     );
-    const firstRows = (await queryParameters(firstConnection)).filter(
+    let firstRows: ParameterRow[];
+    try {
+      firstRows = await queryParameters(firstConnection);
+    } catch (error) {
+      throw new Error(
+        connectionErrorMessage("Base de Dados 1", firstConnection, error),
+      );
+    }
+    let secondRows: ParameterRow[];
+    try {
+      secondRows = await queryParameters(secondConnection);
+    } catch (error) {
+      throw new Error(
+        connectionErrorMessage("Base de Dados 2", secondConnection, error),
+      );
+    }
+    firstRows = firstRows.filter(
       (row) => !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
     );
-    const secondRows = (await queryParameters(secondConnection)).filter(
+    secondRows = secondRows.filter(
       (row) => !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
     );
     res.json({
