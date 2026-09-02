@@ -52,7 +52,7 @@
     "asar": false,
     "asarUnpack": ["node_modules/oracledb/**"],
     "directories": { "output": "release" },
-    "files": ["**/*", "!dist/**", "!release/**", "!server/src/**", "!service-account.json"],
+    "files": ["**/*", "!dist/**", "!release/**", "!server/src/**", "!service-account.json", "!firebase-debug.log"],
     "win": { "target": ["nsis"] },
     "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": false, "runAfterFinish": true }
   }
