@@ -2,6 +2,8 @@ import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   addDoc,
   collection,
+  connectFirestoreEmulator,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -16,14 +18,25 @@ const apiKey =
   process.env.EXPO_PUBLIC_FIREBASE_API_KEY ||
   "AIzaSyCv_NA0-mxOBSYtF_boOJluyV9DO1BHAGo";
 
-const app = getApps().length
-  ? getApp()
-  : initializeApp({
-      apiKey,
-      projectId,
-      authDomain: `${projectId}.firebaseapp.com`,
-    });
+const firebaseConfig = {
+  apiKey,
+  projectId,
+  authDomain: `${projectId}.firebaseapp.com`,
+};
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
+const comparisonCriteriaFirestore =
+  process.env.EXPO_PUBLIC_USE_FIRESTORE_EMULATOR === "true" &&
+  typeof window !== "undefined"
+    ? (() => {
+        const emulatorApp = getApps().find(
+          (item) => item.name === "comparison-criteria-emulator",
+        ) || initializeApp(firebaseConfig, "comparison-criteria-emulator");
+        const emulatorFirestore = getFirestore(emulatorApp);
+        connectFirestoreEmulator(emulatorFirestore, "127.0.0.1", 8080);
+        return emulatorFirestore;
+      })()
+    : firestore;
 
 const baseUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
@@ -64,6 +77,14 @@ export type FirestoreParameterGroup = {
   id: string;
   description: string;
   parameterCodes: string[];
+};
+export type FirestoreComparisonCriterion = {
+  id: string;
+  description: string;
+  information: string;
+  query: string;
+  operator: string;
+  value: string;
 };
 export type FirestoreUserProfile = {
   id: string;
@@ -228,6 +249,47 @@ export async function createParameterGroup(
 export async function updateParameterGroup(group: FirestoreParameterGroup) {
   const { id, ...data } = group;
   await updateDoc(doc(firestore, "parameterGroups", id), data);
+}
+
+export async function listComparisonCriteria() {
+  const result = await getDocs(
+    collection(comparisonCriteriaFirestore, "comparisonCriteria"),
+  );
+  return result.docs
+    .map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        description: String(data.description || ""),
+        information: String(data.information || ""),
+        query: String(data.query || ""),
+        operator: String(data.operator || ""),
+        // Mantém compatibilidade com critérios cadastrados antes da renomeação.
+        value: String(data.value ?? data.condition ?? ""),
+      } as FirestoreComparisonCriterion;
+    })
+    .sort((first, second) =>
+      first.description.localeCompare(second.description, "pt-BR"),
+    );
+}
+
+export async function createComparisonCriterion(
+  criterion: Omit<FirestoreComparisonCriterion, "id">,
+) {
+  await addDoc(
+    collection(comparisonCriteriaFirestore, "comparisonCriteria"),
+    criterion,
+  );
+}
+
+export async function updateComparisonCriterion(
+  criterion: FirestoreComparisonCriterion,
+) {
+  const { id, ...data } = criterion;
+  await updateDoc(doc(comparisonCriteriaFirestore, "comparisonCriteria", id), {
+    ...data,
+    condition: deleteField(),
+  });
 }
 
 export async function getApiVersionSettings(): Promise<ApiVersionSettings> {

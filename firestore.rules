@@ -18,5 +18,8 @@ service cloud.firestore {
       match /parameterGroups/{groupId} {
         allow read, write: if true;
       }
+      match /comparisonCriteria/{criterionId} {
+        allow read, write: if true;
+      }
   }
 }

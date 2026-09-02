@@ -15,17 +15,21 @@ import {
   View,
 } from "react-native";
 import {
+  createComparisonCriterion,
   createConnection,
   createParameterGroup,
   createUser,
   deleteConnection,
+  FirestoreComparisonCriterion,
   FirestoreConnection,
   FirestoreParameterGroup,
   FirestoreUserProfile,
   getApiVersionSettings,
+  listComparisonCriteria,
   listConnections,
   listParameterGroups,
   listUsers,
+  updateComparisonCriterion,
   updateConnection,
   updateParameterGroup,
   updateUser,
@@ -496,11 +500,27 @@ function CompareOutput(
   },
 ) {
   const [tab, setTab] = useState<
-    "system" | "webservices" | "features" | "judicialBodies"
-  >("system");
+    "general" | "system" | "webservices" | "features" | "judicialBodies"
+  >("general");
   return (
     <View>
       <View style={styles.compareSubtabs}>
+        <Pressable
+          style={[
+            styles.compareSubtab,
+            tab === "general" && styles.compareSubtabActive,
+          ]}
+          onPress={() => setTab("general")}
+        >
+          <Text
+            style={[
+              styles.compareSubtabText,
+              tab === "general" && styles.compareSubtabTextActive,
+            ]}
+          >
+            Comparações Gerais
+          </Text>
+        </Pressable>
         <Pressable
           style={[
             styles.compareSubtab,
@@ -565,6 +585,9 @@ function CompareOutput(
             Órgãos Judiciais
           </Text>
         </Pressable>
+      </View>
+      <View style={tab === "general" ? undefined : styles.hiddenTab}>
+        <ConstructionPanel title="Comparações Gerais" />
       </View>
       <View style={tab === "system" ? undefined : styles.hiddenTab}>
         <CompareResults {...props} />
@@ -2106,7 +2129,8 @@ function ParameterGroupsPanel({
         <View>
           <Text style={styles.sectionTitle}>Grupos de Parâmetros</Text>
           <Text style={styles.sectionSubtitle}>
-            Organize códigos de parâmetros para filtrar as comparações.
+            Organize códigos de parâmetros para filtrar as comparações em
+            {" \"Parâmetros de Sistema\"."}
           </Text>
         </View>
         <Pressable style={styles.primaryButton} onPress={reset}>
@@ -2188,6 +2212,207 @@ function ParameterGroupsPanel({
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.primaryText}>Salvar grupo</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ComparisonCriteriaPanel({
+  criteria,
+  onSave,
+}: {
+  criteria: FirestoreComparisonCriterion[];
+  onSave: (
+    criterion: Omit<FirestoreComparisonCriterion, "id">,
+    editing: FirestoreComparisonCriterion | null,
+  ) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<FirestoreComparisonCriterion | null>(
+    null,
+  );
+  const [description, setDescription] = useState("");
+  const [information, setInformation] = useState("");
+  const [query, setQuery] = useState("");
+  const [operator, setOperator] = useState("");
+  const [value, setValue] = useState("");
+  const [filter, setFilter] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const reset = () => {
+    setEditing(null);
+    setDescription("");
+    setInformation("");
+    setQuery("");
+    setOperator("");
+    setValue("");
+    setError("");
+  };
+  const edit = (criterion: FirestoreComparisonCriterion) => {
+    setEditing(criterion);
+    setDescription(criterion.description);
+    setInformation(criterion.information);
+    setQuery(criterion.query);
+    setOperator(criterion.operator);
+    setValue(criterion.value);
+    setError("");
+  };
+  const save = async () => {
+    try {
+      if (
+        !description.trim() ||
+        !information.trim() ||
+        !query.trim() ||
+        !operator.trim() ||
+        !value.trim()
+      )
+        throw new Error("Preencha todos os campos do critério de comparação.");
+      if (!/^(=|<>|>|<)$/.test(operator.trim()))
+        throw new Error("A condição deve ser =, <>, > ou <.");
+      setSaving(true);
+      await onSave(
+        {
+          description: description.trim(),
+          information: information.trim(),
+          query: query.trim(),
+          operator: operator.trim(),
+          value: value.trim(),
+        },
+        editing,
+      );
+      reset();
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const term = filter.trim().toLocaleUpperCase();
+  const displayed = criteria.filter(
+    (criterion) =>
+      !term ||
+      criterion.description.toLocaleUpperCase().includes(term) ||
+      criterion.information.toLocaleUpperCase().includes(term),
+  );
+  return (
+    <View style={styles.usersPage}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Critérios de Comparação</Text>
+          <Text style={styles.sectionSubtitle}>
+            Cadastre os critérios que serão utilizados em Comparações Gerais.
+          </Text>
+        </View>
+        <Pressable style={styles.primaryButton} onPress={reset}>
+          <Text style={styles.primaryText}>+ Novo critério</Text>
+        </Pressable>
+      </View>
+      <View style={styles.usersLayout}>
+        <View style={[styles.card, styles.usersListPanel]}>
+          <View style={styles.groupFilter}>
+            <TextInput
+              style={styles.input}
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="Filtrar descrição ou informação"
+              placeholderTextColor="#98A2B3"
+            />
+          </View>
+          <ScrollView>
+            {displayed.map((criterion) => (
+              <Pressable
+                key={criterion.id}
+                style={[
+                  styles.userListItem,
+                  editing?.id === criterion.id && styles.userListItemActive,
+                ]}
+                onPress={() => edit(criterion)}
+              >
+                <View style={styles.groupListContent}>
+                  <Text style={styles.connectionName}>{criterion.description}</Text>
+                  <Text style={[styles.connectionSub, styles.groupCodesPreview]}>
+                    {criterion.information}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+            {!displayed.length && (
+              <Text style={styles.muted}>Nenhum critério encontrado.</Text>
+            )}
+          </ScrollView>
+        </View>
+        <View style={[styles.card, styles.userFormPanel]}>
+          <Text style={styles.userFormTitle}>
+            {editing ? "Editar critério" : "Novo critério"}
+          </Text>
+          {error ? <Text style={styles.loginError}>{error}</Text> : null}
+          <Field label="Descrição">
+            <TextInput
+              style={styles.input}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Ex.: Integrações ativas"
+              placeholderTextColor="#98A2B3"
+            />
+          </Field>
+          <Field label="Informações">
+            <TextInput
+              style={[styles.input, styles.comparisonCriterionTextArea]}
+              value={information}
+              onChangeText={setInformation}
+              multiline
+              maxLength={2000}
+              placeholder="Informações sobre o critério"
+              placeholderTextColor="#98A2B3"
+            />
+          </Field>
+          <View style={styles.comparisonConditionPanel}>
+            <Text style={styles.comparisonConditionTitle}>
+              Condição para considerar o critério verdadeiro
+            </Text>
+            <Field label="Critério (Digite abaixo o SELECT que atenda os três tipos de Bancos de Dados)">
+              <TextInput
+                style={[styles.input, styles.comparisonCriterionQuery]}
+                value={query}
+                onChangeText={setQuery}
+                multiline
+                maxLength={500}
+                placeholder="SELECT ..."
+                placeholderTextColor="#98A2B3"
+              />
+            </Field>
+            <Field label="Condição (=, &lt;&gt;, &gt; ou &lt; )">
+              <TextInput
+                style={styles.input}
+                value={operator}
+                onChangeText={setOperator}
+                maxLength={5}
+                placeholder="="
+                placeholderTextColor="#98A2B3"
+              />
+            </Field>
+            <Field label="Valor">
+              <TextInput
+                style={styles.input}
+                value={value}
+                onChangeText={setValue}
+                maxLength={200}
+                placeholder="Valor ou expressão esperada"
+                placeholderTextColor="#98A2B3"
+              />
+            </Field>
+          </View>
+          <Pressable
+            style={[styles.primaryButton, saving && styles.disabled]}
+            onPress={save}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.primaryText}>Salvar critério</Text>
             )}
           </Pressable>
         </View>
@@ -2288,7 +2513,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<
     "compare" | "connections" | "settings" | "administrator"
   >("compare");
-  const [adminTab, setAdminTab] = useState<"users" | "groups">("users");
+  const [adminTab, setAdminTab] = useState<
+    "users" | "groups" | "generalComparisons"
+  >("users");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [leftCompare, setLeftCompare] = useState<CompareSelection>({
     connectionId: "",
@@ -2337,6 +2564,9 @@ export default function App() {
   const [users, setUsers] = useState<FirestoreUserProfile[]>([]);
   const [parameterGroups, setParameterGroups] = useState<
     FirestoreParameterGroup[]
+  >([]);
+  const [comparisonCriteria, setComparisonCriteria] = useState<
+    FirestoreComparisonCriterion[]
   >([]);
   const [selectedParameterGroupId, setSelectedParameterGroupId] = useState("");
   const [showUsers, setShowUsers] = useState(false);
@@ -2400,6 +2630,9 @@ export default function App() {
   };
   const loadParameterGroups = async () => {
     setParameterGroups(await listParameterGroups());
+  };
+  const loadComparisonCriteria = async () => {
+    setComparisonCriteria(await listComparisonCriteria());
   };
   const login = async (username: string, password: string) => {
     const normalized = username.trim().toLocaleUpperCase();
@@ -2473,9 +2706,19 @@ export default function App() {
     else await createParameterGroup(group);
     await loadParameterGroups();
   };
+  const saveComparisonCriterion = async (
+    criterion: Omit<FirestoreComparisonCriterion, "id">,
+    editing: FirestoreComparisonCriterion | null,
+  ) => {
+    if (editing)
+      await updateComparisonCriterion({ id: editing.id, ...criterion });
+    else await createComparisonCriterion(criterion);
+    await loadComparisonCriteria();
+  };
   useEffect(() => {
     void loadConnections();
     void loadParameterGroups().catch(() => undefined);
+    void loadComparisonCriteria().catch(() => undefined);
   }, [currentUser?.id]);
   useEffect(() => {
     void getApiVersionSettings()
@@ -2521,27 +2764,6 @@ export default function App() {
     document
       .getElementById("dbcompare-app")
       ?.classList.toggle("dark-theme", theme === "dark");
-    const sidebarLogo = document.querySelector(
-      "#dbcompare-app img",
-    ) as HTMLElement | null;
-    if (sidebarLogo && theme === "light")
-      sidebarLogo.style.cssText =
-        "width:164px;height:130px;box-sizing:border-box;background:#071D3A;border:2px solid #101828;border-radius:16px;";
-    const existingLightLogo = document.getElementById("dbcompare-light-logo");
-    if (theme === "light" && sidebarLogo) {
-      if (!existingLightLogo) {
-        const overlay = document.createElement("div");
-        overlay.id = "dbcompare-light-logo";
-        overlay.style.cssText =
-          "position:fixed;top:22px;left:22px;z-index:20;width:164px;height:130px;box-sizing:border-box;border:3px solid #101828;border-radius:16px;overflow:hidden;background:#071D3A;pointer-events:none;";
-        const image = document.createElement("img");
-        image.src = sidebarLogo.getAttribute("src") || "";
-        image.style.cssText =
-          "display:block;width:160px;height:126px;object-fit:contain;";
-        overlay.appendChild(image);
-        document.body.appendChild(overlay);
-      }
-    } else existingLightLogo?.remove();
     window.localStorage.setItem("dbcompare-theme", theme);
   }, [theme]);
   useEffect(() => {
@@ -3147,13 +3369,36 @@ export default function App() {
                       Grupos de Parâmetros
                     </Text>
                   </Pressable>
+                  <Pressable
+                    style={[
+                      styles.compareSubtab,
+                      adminTab === "generalComparisons" &&
+                        styles.compareSubtabActive,
+                    ]}
+                    onPress={() => setAdminTab("generalComparisons")}
+                  >
+                    <Text
+                      style={[
+                        styles.compareSubtabText,
+                        adminTab === "generalComparisons" &&
+                          styles.compareSubtabTextActive,
+                      ]}
+                    >
+                      Comparações Gerais
+                    </Text>
+                  </Pressable>
                 </View>
                 {adminTab === "users" ? (
                   <UsersPanel users={users} onSave={saveUser} />
-                ) : (
+                ) : adminTab === "groups" ? (
                   <ParameterGroupsPanel
                     groups={parameterGroups}
                     onSave={saveParameterGroup}
+                  />
+                ) : (
+                  <ComparisonCriteriaPanel
+                    criteria={comparisonCriteria}
+                    onSave={saveComparisonCriterion}
                   />
                 )}
               </View>
@@ -3737,8 +3982,8 @@ export default function App() {
 const darkLogoStyles = StyleSheet.create({
   overlay: {
     position: "absolute",
-    top: 22,
-    left: 22,
+    top: 16,
+    left: 16,
     zIndex: 10,
     width: 164,
     height: 130,
@@ -3803,6 +4048,33 @@ const styles = StyleSheet.create(
         height: 115,
         textAlignVertical: "top",
         paddingTop: 10,
+      },
+      comparisonCriterionTextArea: {
+        minHeight: 105,
+        height: 105,
+        textAlignVertical: "top",
+        paddingTop: 10,
+      },
+      comparisonCriterionQuery: {
+        minHeight: 120,
+        height: 120,
+        textAlignVertical: "top",
+        paddingTop: 10,
+      },
+      comparisonConditionPanel: {
+        marginTop: 4,
+        marginBottom: 18,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: "#DFDCFF",
+        borderRadius: 12,
+        backgroundColor: "#FAFAFF",
+      },
+      comparisonConditionTitle: {
+        color: "#5546CB",
+        fontWeight: "800",
+        fontSize: 14,
+        marginBottom: 14,
       },
       usersListPanel: { width: 330, maxHeight: 570 },
       userFormPanel: { flex: 1, padding: 22 },
