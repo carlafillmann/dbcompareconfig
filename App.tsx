@@ -86,13 +86,18 @@ type WebServiceOption = {
   description: string;
   integrationType: string;
 };
+type GeneralComparisonResult = {
+  id: string;
+  firstOn: boolean;
+  secondOn: boolean;
+};
 
 const apiUrl =
   process.env.EXPO_PUBLIC_DATABASE_API_URL ||
   process.env.EXPO_PUBLIC_API_URL ||
   "http://127.0.0.1:3333";
 const connectorDownloadUrl =
-  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.5/DBCompare.Connector.Setup.1.0.5.exe";
+  "https://github.com/carlafillmann/dbcompareconfig/releases/download/v1.0.6/DBCompare.Connector.Setup.1.0.6.exe";
 const environments: EnvironmentType[] = [
   "Produção",
   "Homologação",
@@ -216,6 +221,115 @@ function ConstructionPanel({ title }: { title: string }) {
       />
       <Text style={styles.constructionTitle}>{title}</Text>
       <Text style={styles.constructionText}>Em construção</Text>
+    </View>
+  );
+}
+function GeneralComparisons({
+  active,
+  criteria,
+  compare,
+  refreshKey,
+}: {
+  active: boolean;
+  criteria: FirestoreComparisonCriterion[];
+  compare: () => Promise<GeneralComparisonResult[]>;
+  refreshKey: number;
+}) {
+  const [rows, setRows] = useState<GeneralComparisonResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [information, setInformation] = useState<FirestoreComparisonCriterion | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!active) return;
+    if (!criteria.length) {
+      setRows([]);
+      setError("");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    compare()
+      .then(setRows)
+      .catch((reason) => {
+        setRows([]);
+        setError(errorText(reason));
+      })
+      .finally(() => setLoading(false));
+  }, [active, criteria, compare, refreshKey]);
+  const resultById = new Map(rows.map((row) => [row.id, row]));
+  const statusIcon = (on: boolean) => (
+    <View style={[styles.generalStatusIcon, on ? styles.generalStatusOn : styles.generalStatusOff]}>
+      <Text style={styles.generalStatusIconText}>{on ? "ON" : "OFF"}</Text>
+    </View>
+  );
+  return (
+    <View style={styles.resultsCard}>
+      <View style={styles.resultsHeading}>
+        <View>
+          <Text style={styles.sectionTitle}>Comparações Gerais</Text>
+          <Text style={styles.sectionSubtitle}>
+            Resultado dos critérios configurados para as duas bases.
+          </Text>
+        </View>
+      </View>
+      {loading && <ActivityIndicator style={styles.generalLoading} color="#6558F5" />}
+      {error ? <Text style={styles.generalError}>{error}</Text> : null}
+      {!loading && !error && !criteria.length && (
+        <Text style={styles.generalEmpty}>Nenhum critério de comparação cadastrado.</Text>
+      )}
+      {!loading && !error && criteria.length > 0 && (
+        <ScrollView horizontal>
+          <View style={styles.generalTable}>
+            <View style={[styles.generalTableRow, styles.generalTableHeader]}>
+              <Text style={[styles.tableHeadText, styles.generalCriterionCell]}>CRITÉRIO</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 1</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 2</Text>
+              <Text style={[styles.tableHeadText, styles.generalInformationCell]}>INFORMAÇÕES</Text>
+            </View>
+            {criteria.map((criterion) => {
+              const result = resultById.get(criterion.id);
+              return (
+                <View key={criterion.id} style={styles.generalTableRow}>
+                  <Text style={[styles.cellText, styles.generalCriterionCell]}>{criterion.description}</Text>
+                  <View style={styles.generalBaseCell}>{statusIcon(Boolean(result?.firstOn))}</View>
+                  <View style={styles.generalBaseCell}>{statusIcon(Boolean(result?.secondOn))}</View>
+                  <View style={styles.generalInformationCell}>
+                    <Pressable
+                      style={styles.generalInfoButton}
+                      onPress={() => setInformation(criterion)}
+                      accessibilityLabel={`Informações de ${criterion.description}`}
+                    >
+                      <Text style={styles.generalInfoButtonText}>i</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+      <Modal
+        visible={Boolean(information)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInformation(null)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{information?.description}</Text>
+              <Pressable onPress={() => setInformation(null)}>
+                <Text style={styles.close}>×</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.generalInformationModal}>
+              <Text style={styles.generalInformationText}>{information?.information}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -496,6 +610,8 @@ function CompareOutput(
       secondCode: string,
     ) => Promise<CompareResult[]>;
     compareFeatures: () => Promise<CompareResult[]>;
+    comparisonCriteria: FirestoreComparisonCriterion[];
+    compareGeneral: () => Promise<GeneralComparisonResult[]>;
     comparisonVersion: number;
   },
 ) {
@@ -587,7 +703,12 @@ function CompareOutput(
         </Pressable>
       </View>
       <View style={tab === "general" ? undefined : styles.hiddenTab}>
-        <ConstructionPanel title="Comparações Gerais" />
+        <GeneralComparisons
+          active={tab === "general"}
+          criteria={props.comparisonCriteria}
+          compare={props.compareGeneral}
+          refreshKey={props.comparisonVersion}
+        />
       </View>
       <View style={tab === "system" ? undefined : styles.hiddenTab}>
         <CompareResults {...props} />
@@ -2972,6 +3093,22 @@ export default function App() {
     });
     return result.rows || [];
   };
+  const compareGeneral = async (): Promise<GeneralComparisonResult[]> => {
+    const result = await request("/api/general-comparisons", {
+      method: "POST",
+      body: JSON.stringify({
+        first: webServiceConnection(leftCompare),
+        second: webServiceConnection(rightCompare),
+        criteria: comparisonCriteria.map((criterion) => ({
+          id: criterion.id,
+          query: criterion.query,
+          operator: criterion.operator,
+          value: criterion.value,
+        })),
+      }),
+    });
+    return result.rows || [];
+  };
   const compareBases = async () => {
     let first: Connection | undefined;
     let second: Connection | undefined;
@@ -3545,6 +3682,8 @@ export default function App() {
                         loadWebServices={loadWebServices}
                         compareWebServices={compareWebServices}
                         compareFeatures={compareFeatures}
+                        comparisonCriteria={comparisonCriteria}
+                        compareGeneral={compareGeneral}
                         comparisonVersion={comparisonVersion}
                         parameterGroups={parameterGroups}
                         selectedParameterGroupId={selectedParameterGroupId}
@@ -4256,6 +4395,60 @@ const styles = StyleSheet.create(
         borderBottomColor: "#EAECF0",
         borderBottomWidth: 1,
       },
+      generalLoading: { marginVertical: 30 },
+      generalError: {
+        color: "#B42318",
+        backgroundColor: "#FEF3F2",
+        padding: 16,
+        lineHeight: 20,
+      },
+      generalEmpty: { color: "#667085", padding: 24, textAlign: "center" },
+      generalTable: { minWidth: 900, width: "100%" },
+      generalTableRow: {
+        minHeight: 64,
+        flexDirection: "row",
+        alignItems: "center",
+        borderTopWidth: 1,
+        borderTopColor: "#EAECF0",
+        paddingHorizontal: 20,
+      },
+      generalTableHeader: {
+        minHeight: 44,
+        backgroundColor: "#F9FAFB",
+        borderTopWidth: 0,
+      },
+      generalCriterionCell: { width: 330, paddingRight: 16 },
+      generalBaseCell: {
+        width: 220,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 10,
+      },
+      generalInformationCell: {
+        width: 110,
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      generalStatusIcon: {
+        minWidth: 44,
+        paddingVertical: 5,
+        borderRadius: 999,
+        alignItems: "center",
+      },
+      generalStatusOn: { backgroundColor: "#DCFCE7" },
+      generalStatusOff: { backgroundColor: "#FEE4E2" },
+      generalStatusIconText: { color: "#344054", fontSize: 11, fontWeight: "800" },
+      generalInfoButton: {
+        width: 27,
+        height: 27,
+        borderRadius: 14,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#EEEDFE",
+      },
+      generalInfoButtonText: { color: "#5546CB", fontSize: 16, fontWeight: "800" },
+      generalInformationModal: { maxHeight: 360 },
+      generalInformationText: { color: "#475467", fontSize: 14, lineHeight: 22 },
       resultsTable: { minWidth: 1000, width: "100%" },
       resultRow: {
         minHeight: 58,

@@ -1,6 +1,6 @@
 {
   "name": "db-compare-config",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "DBCompare Connector para acesso local às bases corporativas.",
   "author": "Softplan",
   "private": true,

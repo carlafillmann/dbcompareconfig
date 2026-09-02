@@ -31,6 +31,12 @@ type ParameterRow = {
   deExplicacao: string | null;
 };
 type CompareSide = Partial<ConnectionPayload>;
+type GeneralComparisonCriterion = {
+  id: string;
+  query: string;
+  operator: string;
+  value: string;
+};
 const parameterQuery =
   "SELECT D.CDPARAMETRO, D.DEPARAMETRO, V.VLPARAMETRO, D.DEEXPLICACAO FROM EPADDEFPARAMETRO D JOIN EPADVALORPARAMETRO V ON (D.CDPARAMETRO = V.CDPARAMETRO) WHERE V.CDINSTALACAO = 1";
 const webServicesQuery =
@@ -38,7 +44,7 @@ const webServicesQuery =
 const webServiceParametersQuery =
   "SELECT CDWEBSERVICES, DEPARAMETRO, DEDESCRICAO, VLPARAMETRO FROM ESPJWSPARAMETROS WHERE CDWEBSERVICES = ";
 const featuresQuery = "SELECT NMCONFIGFEATURE, VLCONFIG FROM ESPJCONFIGFEATURE";
-const apiVersion = "1.0.5";
+const apiVersion = "1.0.6";
 
 const app = express();
 const allowedOrigins = (
@@ -376,6 +382,39 @@ async function queryFeatures(data: Required<ConnectionPayload>) {
     normalizeFeature,
   );
 }
+function criterionMatches(
+  returnedValue: unknown,
+  operator: string,
+  expectedValue: string,
+) {
+  if (returnedValue === null || returnedValue === undefined) return false;
+  const actual = String(returnedValue).trim();
+  const expected = expectedValue.trim();
+  const actualNumber = Number(actual);
+  const expectedNumber = Number(expected);
+  const compareAsNumber =
+    actual !== "" && expected !== "" && !Number.isNaN(actualNumber) && !Number.isNaN(expectedNumber);
+  const left = compareAsNumber ? actualNumber : actual;
+  const right = compareAsNumber ? expectedNumber : expected;
+  if (operator === "=") return left === right;
+  if (operator === "<>") return left !== right;
+  if (operator === ">") return left > right;
+  if (operator === "<") return left < right;
+  throw new Error("A condição do critério deve ser =, <>, > ou <.");
+}
+async function evaluateGeneralCriterion(
+  connection: Required<ConnectionPayload>,
+  criterion: GeneralComparisonCriterion,
+) {
+  const query = criterion.query.trim();
+  if (!/^select\b/i.test(query) || query.includes(";"))
+    throw new Error(
+      `O critério "${criterion.id}" deve conter apenas um SELECT, sem ponto e vírgula.`,
+    );
+  const rows = await queryWebServiceRows(connection, undefined, query);
+  const returnedValue = rows.length ? Object.values(rows[0])[0] : null;
+  return criterionMatches(returnedValue, criterion.operator.trim(), criterion.value);
+}
 function compareWebServiceParameters(
   first: WebServiceParameter[],
   second: WebServiceParameter[],
@@ -494,6 +533,58 @@ app.post("/api/compare", async (req, res, next) => {
       firstCount: firstRows.length,
       secondCount: secondRows.length,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+app.post("/api/general-comparisons", async (req, res, next) => {
+  try {
+    const body = req.body as {
+      first?: CompareSide;
+      second?: CompareSide;
+      criteria?: unknown;
+    };
+    if (!Array.isArray(body.criteria))
+      throw new Error("Nenhum critério de comparação foi informado.");
+    const criteria = body.criteria.map((item) => {
+      const criterion = item as Partial<GeneralComparisonCriterion>;
+      if (
+        !criterion.id ||
+        !criterion.query?.trim() ||
+        !["=", "<>", ">", "<"].includes(criterion.operator || "") ||
+        criterion.value === undefined
+      )
+        throw new Error("Há um critério de comparação inválido.");
+      return {
+        id: String(criterion.id),
+        query: String(criterion.query),
+        operator: String(criterion.operator),
+        value: String(criterion.value),
+      };
+    });
+    const firstConnection = comparisonConnection(body.first || {});
+    const secondConnection = comparisonConnection(body.second || {});
+    const rows = [] as { id: string; firstOn: boolean; secondOn: boolean }[];
+    for (const criterion of criteria) {
+      let firstOn: boolean;
+      try {
+        firstOn = await evaluateGeneralCriterion(firstConnection, criterion);
+      } catch (error) {
+        throw new Error(
+          `${connectionErrorMessage("Base de Dados 1", firstConnection, error)}\nCritério: ${criterion.id}`,
+        );
+      }
+      let secondOn: boolean;
+      try {
+        secondOn = await evaluateGeneralCriterion(secondConnection, criterion);
+      } catch (error) {
+        throw new Error(
+          `${connectionErrorMessage("Base de Dados 2", secondConnection, error)}\nCritério: ${criterion.id}`,
+        );
+      }
+      rows.push({ id: criterion.id, firstOn, secondOn });
+    }
+    res.json({ rows });
   } catch (error) {
     next(error);
   }
