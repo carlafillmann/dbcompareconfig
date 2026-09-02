@@ -2878,7 +2878,7 @@ export default function App() {
       document.head.appendChild(element);
     }
     element.textContent =
-      'form label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-weight: 800 !important; } #dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img { opacity: 0; }';
+      'form label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; font-weight: 800 !important; } #dbcompare-app .sidebarBrand img { border: 2px solid #101828; border-radius: 16px; } #dbcompare-app.dark-theme { filter: invert(.91) hue-rotate(180deg); } #dbcompare-app.dark-theme .sidebarBrand img, #dbcompare-app.dark-theme .connectorDownloadIcon { opacity: 0; }';
     document
       .getElementById("dbcompare-app")
       ?.classList.toggle("dark-theme", theme === "dark");
@@ -3289,13 +3289,22 @@ export default function App() {
   return (
     <View style={styles.page}>
       {theme === "dark" && (
-        <View pointerEvents="none" style={styles.darkLogoOverlay}>
-          <Image
-            source={require("./assets/dbcompare-logo.png")}
-            style={styles.darkLogo}
-            resizeMode="contain"
-          />
-        </View>
+        <>
+          <View pointerEvents="none" style={styles.darkLogoOverlay}>
+            <Image
+              source={require("./assets/dbcompare-logo.png")}
+              style={styles.darkLogo}
+              resizeMode="contain"
+            />
+          </View>
+          <View pointerEvents="none" style={styles.darkConnectorLogoOverlay}>
+            <Image
+              source={require("./assets/api-download.png")}
+              style={styles.darkConnectorLogo}
+              resizeMode="cover"
+            />
+          </View>
+        </>
       )}
       <View nativeID="dbcompare-app" style={styles.page}>
         <StatusBar style={theme === "dark" ? "light" : "dark"} />
@@ -4121,15 +4130,27 @@ const darkLogoStyles = StyleSheet.create({
     top: 16,
     left: 16,
     zIndex: 10,
-    width: 164,
-    height: 130,
+    width: 160,
+    height: 126,
     borderWidth: 2,
     borderColor: "#FFFFFF",
     borderRadius: 16,
     overflow: "hidden",
-    backgroundColor: "#071D3A",
   },
   image: { width: 160, height: 126 },
+  connectorOverlay: {
+    position: "absolute",
+    left: 24,
+    bottom: 25,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  connectorImage: { width: 36, height: 36 },
 });
 
 const styles = StyleSheet.create(
@@ -4137,6 +4158,8 @@ const styles = StyleSheet.create(
     {
       darkLogoOverlay: darkLogoStyles.overlay,
       darkLogo: darkLogoStyles.image,
+      darkConnectorLogoOverlay: darkLogoStyles.connectorOverlay,
+      darkConnectorLogo: darkLogoStyles.connectorImage,
       signOutButton: {
         width: 28,
         height: 28,
