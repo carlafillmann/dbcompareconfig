@@ -227,37 +227,30 @@ function ConstructionPanel({ title }: { title: string }) {
 function GeneralComparisons({
   active,
   criteria,
-  compare,
-  refreshKey,
+  firstName,
+  secondName,
+  rows,
+  loaded,
+  loading,
+  error,
+  onLoad,
 }: {
   active: boolean;
   criteria: FirestoreComparisonCriterion[];
-  compare: () => Promise<GeneralComparisonResult[]>;
-  refreshKey: number;
+  firstName: string;
+  secondName: string;
+  rows: GeneralComparisonResult[];
+  loaded: boolean;
+  loading: boolean;
+  error: string;
+  onLoad: () => Promise<void>;
 }) {
-  const [rows, setRows] = useState<GeneralComparisonResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [information, setInformation] = useState<FirestoreComparisonCriterion | null>(
     null,
   );
   useEffect(() => {
-    if (!active) return;
-    if (!criteria.length) {
-      setRows([]);
-      setError("");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    compare()
-      .then(setRows)
-      .catch((reason) => {
-        setRows([]);
-        setError(errorText(reason));
-      })
-      .finally(() => setLoading(false));
-  }, [active, criteria, compare, refreshKey]);
+    if (active && !loaded && !loading) void onLoad();
+  }, [active, loaded, loading, onLoad]);
   const resultById = new Map(rows.map((row) => [row.id, row]));
   const statusIcon = (on: boolean) => (
     <View style={[styles.generalStatusIcon, on ? styles.generalStatusOn : styles.generalStatusOff]}>
@@ -284,8 +277,8 @@ function GeneralComparisons({
           <View style={styles.generalTable}>
             <View style={[styles.generalTableRow, styles.generalTableHeader]}>
               <Text style={[styles.tableHeadText, styles.generalCriterionCell]}>CRITÉRIO</Text>
-              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 1</Text>
-              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 2</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 1 · {firstName}</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 2 · {secondName}</Text>
               <Text style={[styles.tableHeadText, styles.generalInformationCell]}>INFORMAÇÕES</Text>
             </View>
             {criteria.map((criterion) => {
@@ -611,7 +604,11 @@ function CompareOutput(
     ) => Promise<CompareResult[]>;
     compareFeatures: () => Promise<CompareResult[]>;
     comparisonCriteria: FirestoreComparisonCriterion[];
-    compareGeneral: () => Promise<GeneralComparisonResult[]>;
+    generalComparisonRows: GeneralComparisonResult[];
+    generalComparisonLoaded: boolean;
+    generalComparisonLoading: boolean;
+    generalComparisonError: string;
+    loadGeneralComparisons: () => Promise<void>;
     comparisonVersion: number;
   },
 ) {
@@ -706,8 +703,13 @@ function CompareOutput(
         <GeneralComparisons
           active={tab === "general"}
           criteria={props.comparisonCriteria}
-          compare={props.compareGeneral}
-          refreshKey={props.comparisonVersion}
+          firstName={props.firstName}
+          secondName={props.secondName}
+          rows={props.generalComparisonRows}
+          loaded={props.generalComparisonLoaded}
+          loading={props.generalComparisonLoading}
+          error={props.generalComparisonError}
+          onLoad={props.loadGeneralComparisons}
         />
       </View>
       <View style={tab === "system" ? undefined : styles.hiddenTab}>
@@ -2646,6 +2648,15 @@ export default function App() {
     password: "",
   });
   const [compareRows, setCompareRows] = useState<CompareResult[] | null>(null);
+  const [generalComparisonRows, setGeneralComparisonRows] = useState<
+    GeneralComparisonResult[]
+  >([]);
+  const [generalComparisonCriteria, setGeneralComparisonCriteria] = useState<
+    FirestoreComparisonCriterion[]
+  >([]);
+  const [generalComparisonLoaded, setGeneralComparisonLoaded] = useState(false);
+  const [generalComparisonLoading, setGeneralComparisonLoading] = useState(false);
+  const [generalComparisonError, setGeneralComparisonError] = useState("");
   const [compareSelectionCollapsed, setCompareSelectionCollapsed] =
     useState(false);
   const [comparisonVersion, setComparisonVersion] = useState(0);
@@ -3102,7 +3113,7 @@ export default function App() {
       body: JSON.stringify({
         first: webServiceConnection(leftCompare),
         second: webServiceConnection(rightCompare),
-        criteria: comparisonCriteria.map((criterion) => ({
+        criteria: generalComparisonCriteria.map((criterion) => ({
           id: criterion.id,
           query: criterion.query,
           operator: criterion.operator,
@@ -3111,6 +3122,20 @@ export default function App() {
       }),
     });
     return result.rows || [];
+  };
+  const loadGeneralComparisons = async () => {
+    if (generalComparisonLoaded || generalComparisonLoading) return;
+    setGeneralComparisonLoading(true);
+    setGeneralComparisonError("");
+    try {
+      setGeneralComparisonRows(await compareGeneral());
+    } catch (reason) {
+      setGeneralComparisonRows([]);
+      setGeneralComparisonError(errorText(reason));
+    } finally {
+      setGeneralComparisonLoaded(true);
+      setGeneralComparisonLoading(false);
+    }
   };
   const compareBases = async () => {
     let first: Connection | undefined;
@@ -3167,6 +3192,10 @@ export default function App() {
             !ignored.has(row.cdParametro.trim().toLocaleUpperCase()),
         ),
       );
+      setGeneralComparisonCriteria(comparisonCriteria);
+      setGeneralComparisonRows([]);
+      setGeneralComparisonError("");
+      setGeneralComparisonLoaded(false);
       setCompareSelectionCollapsed(true);
       setComparisonVersion((version) => version + 1);
     } catch (error) {
@@ -3704,8 +3733,12 @@ export default function App() {
                         loadWebServices={loadWebServices}
                         compareWebServices={compareWebServices}
                         compareFeatures={compareFeatures}
-                        comparisonCriteria={comparisonCriteria}
-                        compareGeneral={compareGeneral}
+                        comparisonCriteria={generalComparisonCriteria}
+                        generalComparisonRows={generalComparisonRows}
+                        generalComparisonLoaded={generalComparisonLoaded}
+                        generalComparisonLoading={generalComparisonLoading}
+                        generalComparisonError={generalComparisonError}
+                        loadGeneralComparisons={loadGeneralComparisons}
                         comparisonVersion={comparisonVersion}
                         parameterGroups={parameterGroups}
                         selectedParameterGroupId={selectedParameterGroupId}
