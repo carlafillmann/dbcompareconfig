@@ -2332,9 +2332,6 @@ function ComparisonCriteriaPanel({
               >
                 <View style={styles.groupListContent}>
                   <Text style={styles.connectionName}>{criterion.description}</Text>
-                  <Text style={[styles.connectionSub, styles.groupCodesPreview]}>
-                    {criterion.information}
-                  </Text>
                 </View>
               </Pressable>
             ))}
