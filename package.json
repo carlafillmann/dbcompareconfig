@@ -13,6 +13,7 @@
     "build:api": "tsc -p server/tsconfig.json",
     "connector": "npm run build:api && electron .",
     "package:connector": "npm run build:api && electron-builder --win nsis",
+    "postpackage:connector": "npm run publish:api-version",
     "publish:api-version": "node scripts/publish-api-version.mjs"
   },
   "dependencies": {
