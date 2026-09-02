@@ -15,17 +15,20 @@ import {
   View,
 } from "react-native";
 import {
+  createAuditLog,
   createComparisonCriterion,
   createConnection,
   createParameterGroup,
   createUser,
   deleteConnection,
+  FirestoreAuditLog,
   FirestoreComparisonCriterion,
   FirestoreConnection,
   FirestoreParameterGroup,
   FirestoreUserProfile,
   getApiVersionSettings,
   listComparisonCriteria,
+  listAuditLogs,
   listConnections,
   listParameterGroups,
   listUsers,
@@ -2629,12 +2632,54 @@ function SettingsPanel({
   );
 }
 
+function AuditPanel({ logs }: { logs: FirestoreAuditLog[] }) {
+  const dateTime = (value: string) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleString("pt-BR");
+  };
+  return (
+    <View style={styles.usersPage}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Auditoria</Text>
+          <Text style={styles.sectionSubtitle}>
+            Histórico das operações realizadas no sistema.
+          </Text>
+        </View>
+      </View>
+      <View style={styles.resultsCard}>
+        <ScrollView horizontal showsHorizontalScrollIndicator>
+          <View style={styles.auditTable}>
+            <View style={[styles.auditRow, styles.auditHeader]}>
+              <Text style={[styles.tableHeader, styles.auditDateCell]}>Data/hora</Text>
+              <Text style={[styles.tableHeader, styles.auditUserCell]}>Usuário</Text>
+              <Text style={[styles.tableHeader, styles.auditVersionCell]}>Versão da API</Text>
+              <Text style={[styles.tableHeader, styles.auditOperationCell]}>Operação</Text>
+            </View>
+            {logs.map((log) => (
+              <View key={log.id} style={styles.auditRow}>
+                <Text style={[styles.tableCell, styles.auditDateCell, log.error && styles.auditErrorText]}>{dateTime(log.createdAt)}</Text>
+                <Text style={[styles.tableCell, styles.auditUserCell, log.error && styles.auditErrorText]}>{log.username}</Text>
+                <Text style={[styles.tableCell, styles.auditVersionCell, log.error && styles.auditErrorText]}>{log.apiVersion}</Text>
+                <Text style={[styles.tableCell, styles.auditOperationCell, log.error && styles.auditErrorText]}>{log.operation}</Text>
+              </View>
+            ))}
+            {!logs.length && <Text style={styles.generalEmpty}>Nenhuma operação registrada.</Text>}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<
     "compare" | "connections" | "settings" | "administrator"
   >("compare");
   const [adminTab, setAdminTab] = useState<
-    "users" | "groups" | "generalComparisons"
+    "users" | "groups" | "generalComparisons" | "audit"
   >("users");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [leftCompare, setLeftCompare] = useState<CompareSelection>({
@@ -2697,6 +2742,7 @@ export default function App() {
   const [comparisonCriteria, setComparisonCriteria] = useState<
     FirestoreComparisonCriterion[]
   >([]);
+  const [auditLogs, setAuditLogs] = useState<FirestoreAuditLog[]>([]);
   const [selectedParameterGroupId, setSelectedParameterGroupId] = useState("");
   const [showUsers, setShowUsers] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirestoreUserProfile | null>(
@@ -2763,6 +2809,7 @@ export default function App() {
       setFirestoreOnline(true);
     } catch (error) {
       setFirestoreOnline(false);
+      registerError(error);
       setNotice({
         type: "error",
         title: "Não foi possível acessar o Firestore",
@@ -2781,31 +2828,59 @@ export default function App() {
   const loadComparisonCriteria = async () => {
     setComparisonCriteria(await listComparisonCriteria());
   };
+  const loadAuditLogs = async () => {
+    setAuditLogs(await listAuditLogs());
+  };
+  const registerAudit = (
+    operation: string,
+    username = currentUser?.username || "Não identificado",
+    error = false,
+  ) => {
+    void createAuditLog({
+      createdAt: new Date().toISOString(),
+      username,
+      apiVersion: latestApiVersion || "Não informada",
+      operation,
+      error,
+    })
+      .then(() => {
+        if (currentUser?.role === "Administrador") void loadAuditLogs();
+      })
+      .catch(() => undefined);
+  };
+  const registerError = (error: unknown, username?: string) =>
+    registerAudit(`Erro: ${errorText(error)}`, username, true);
   const login = async (username: string, password: string) => {
     const normalized = username.trim().toLocaleUpperCase();
-    if (!normalized || !password) throw new Error("Informe usuário e senha.");
-    const user = (await listUsers()).find(
-      (item) => item.username.toLocaleUpperCase() === normalized,
-    );
-    if (!user || user.passwordHash !== (await hashPassword(password)))
-      throw new Error("Usuário ou senha inválidos.");
-    if (!user.active) throw new Error("Este usuário está inativo.");
-    setCurrentUser(user);
-    setTheme(user.themePreference || "light");
-    setActiveTab("compare");
-    if (Platform.OS === "web") {
-      window.localStorage.setItem("dbcompare-session", JSON.stringify(user));
-      const PasswordCredential = (window as any).PasswordCredential;
-      if (PasswordCredential && navigator.credentials?.store)
-        void navigator.credentials
-          .store(
-            new PasswordCredential({
-              id: normalized,
-              password,
-              name: user.name,
-            }),
-          )
-          .catch(() => undefined);
+    try {
+      if (!normalized || !password) throw new Error("Informe usuário e senha.");
+      const user = (await listUsers()).find(
+        (item) => item.username.toLocaleUpperCase() === normalized,
+      );
+      if (!user || user.passwordHash !== (await hashPassword(password)))
+        throw new Error("Usuário ou senha inválidos.");
+      if (!user.active) throw new Error("Este usuário está inativo.");
+      setCurrentUser(user);
+      setTheme(user.themePreference || "light");
+      setActiveTab("compare");
+      registerAudit("Login no sistema", user.username);
+      if (Platform.OS === "web") {
+        window.localStorage.setItem("dbcompare-session", JSON.stringify(user));
+        const PasswordCredential = (window as any).PasswordCredential;
+        if (PasswordCredential && navigator.credentials?.store)
+          void navigator.credentials
+            .store(
+              new PasswordCredential({
+                id: normalized,
+                password,
+                name: user.name,
+              }),
+            )
+            .catch(() => undefined);
+      }
+    } catch (error) {
+      registerError(error, normalized || "Não identificado");
+      throw error;
     }
   };
   const saveUser = async (
@@ -2832,35 +2907,59 @@ export default function App() {
       ignoredParameters: editing?.ignoredParameters || [],
       passwordHash,
     };
-    if (editing) await updateUser({ id: editing.id, ...payload });
-    else await createUser(payload);
-    await loadUsers();
-    if (editing && editing.id === currentUser?.id) {
-      const updated = { id: editing.id, ...payload };
-      setCurrentUser(updated);
-      if (Platform.OS === "web")
-        window.localStorage.setItem(
-          "dbcompare-session",
-          JSON.stringify(updated),
-        );
+    try {
+      if (editing) await updateUser({ id: editing.id, ...payload });
+      else await createUser(payload);
+      await loadUsers();
+      registerAudit(
+        `${editing ? "Atualização de usuário" : "Inclusão de usuário"}: ${payload.username} - ${payload.name}`,
+      );
+      if (editing && editing.id === currentUser?.id) {
+        const updated = { id: editing.id, ...payload };
+        setCurrentUser(updated);
+        if (Platform.OS === "web")
+          window.localStorage.setItem(
+            "dbcompare-session",
+            JSON.stringify(updated),
+          );
+      }
+    } catch (error) {
+      registerError(error);
+      throw error;
     }
   };
   const saveParameterGroup = async (
     group: Omit<FirestoreParameterGroup, "id">,
     editing: FirestoreParameterGroup | null,
   ) => {
-    if (editing) await updateParameterGroup({ id: editing.id, ...group });
-    else await createParameterGroup(group);
-    await loadParameterGroups();
+    try {
+      if (editing) await updateParameterGroup({ id: editing.id, ...group });
+      else await createParameterGroup(group);
+      await loadParameterGroups();
+      registerAudit(
+        `${editing ? "Atualização de Grupos de Parâmetros" : "Inclusão de Grupos de Parâmetros"}: ${group.description} / ${group.parameterCodes.join(", ")}`,
+      );
+    } catch (error) {
+      registerError(error);
+      throw error;
+    }
   };
   const saveComparisonCriterion = async (
     criterion: Omit<FirestoreComparisonCriterion, "id">,
     editing: FirestoreComparisonCriterion | null,
   ) => {
-    if (editing)
-      await updateComparisonCriterion({ id: editing.id, ...criterion });
-    else await createComparisonCriterion(criterion);
-    await loadComparisonCriteria();
+    try {
+      if (editing)
+        await updateComparisonCriterion({ id: editing.id, ...criterion });
+      else await createComparisonCriterion(criterion);
+      await loadComparisonCriteria();
+      registerAudit(
+        `${editing ? "Atualização de Critério de Comparação" : "Inclusão de Critério de Comparação"}: ${criterion.description}`,
+      );
+    } catch (error) {
+      registerError(error);
+      throw error;
+    }
   };
   useEffect(() => {
     void loadConnections();
@@ -2873,8 +2972,24 @@ export default function App() {
       .catch(() => undefined);
   }, []);
   useEffect(() => {
-    if (currentUser?.role === "Administrador") void loadUsers();
+    if (currentUser?.role === "Administrador") {
+      void loadUsers();
+      void loadAuditLogs().catch(() => undefined);
+    }
   }, [currentUser?.role]);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const onError = (event: ErrorEvent) =>
+      registerError(event.error || event.message);
+    const onUnhandledRejection = (event: PromiseRejectionEvent) =>
+      registerError(event.reason);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, [currentUser?.username, latestApiVersion]);
   useEffect(() => {
     if (!currentUser) return;
     void listUsers()
@@ -3132,6 +3247,7 @@ export default function App() {
     } catch (reason) {
       setGeneralComparisonRows([]);
       setGeneralComparisonError(errorText(reason));
+      registerError(reason);
     } finally {
       setGeneralComparisonLoaded(true);
       setGeneralComparisonLoading(false);
@@ -3198,8 +3314,12 @@ export default function App() {
       setGeneralComparisonLoaded(false);
       setCompareSelectionCollapsed(true);
       setComparisonVersion((version) => version + 1);
+      registerAudit(
+        `Comparação entre as bases: ${first.name} X ${second.name}`,
+      );
     } catch (error) {
       setCompareRows(null);
+      registerError(error);
       const originalError = errorText(error);
       const connectorUnavailable =
         /failed to fetch|network request failed|networkerror/i.test(
@@ -3217,11 +3337,19 @@ export default function App() {
     }
   };
   const saveSettings = async (parameters: string[]) => {
-    const updated = { ...currentUser, ignoredParameters: parameters };
-    await updateUser(updated);
-    setCurrentUser(updated);
-    if (Platform.OS === "web")
-      window.localStorage.setItem("dbcompare-session", JSON.stringify(updated));
+    try {
+      const updated = { ...currentUser, ignoredParameters: parameters };
+      await updateUser(updated);
+      setCurrentUser(updated);
+      if (Platform.OS === "web")
+        window.localStorage.setItem("dbcompare-session", JSON.stringify(updated));
+      registerAudit(
+        `Configuração de Parâmetros Ignorados: ${parameters.join(", ") || "Nenhum parâmetro"}`,
+      );
+    } catch (error) {
+      registerError(error);
+      throw error;
+    }
   };
   const selectedName = (id: string, fallback: string) =>
     connections.find((connection) => connection.id === id)?.name || fallback;
@@ -3232,6 +3360,7 @@ export default function App() {
       setTestMessage(null);
       setShowTestForm(true);
     } catch (error) {
+      registerError(error);
       setNotice({
         type: "error",
         title: "Dados incompletos",
@@ -3259,6 +3388,7 @@ export default function App() {
         message: result.message,
       });
     } catch (error) {
+      registerError(error);
       setTestMessage({
         type: "error",
         title: "Falha no teste",
@@ -3286,6 +3416,9 @@ export default function App() {
       if (editingId) await updateConnection({ id: editingId, ...connection });
       else await createConnection(connection);
       await loadConnections();
+      registerAudit(
+        `${editingId ? "Atualização de conexão" : "Inclusão de nova conexão"}: ${connection.name}`,
+      );
       setShowForm(false);
       setNotice({
         type: "success",
@@ -3295,6 +3428,7 @@ export default function App() {
           : "Conexão cadastrada no Firestore.",
       });
     } catch (error) {
+      registerError(error);
       setNotice({
         type: "error",
         title: "Não foi possível salvar no Firestore",
@@ -3572,6 +3706,22 @@ export default function App() {
                       Comparações Gerais
                     </Text>
                   </Pressable>
+                  <Pressable
+                    style={[
+                      styles.compareSubtab,
+                      adminTab === "audit" && styles.compareSubtabActive,
+                    ]}
+                    onPress={() => setAdminTab("audit")}
+                  >
+                    <Text
+                      style={[
+                        styles.compareSubtabText,
+                        adminTab === "audit" && styles.compareSubtabTextActive,
+                      ]}
+                    >
+                      Auditoria
+                    </Text>
+                  </Pressable>
                 </View>
                 {adminTab === "users" ? (
                   <UsersPanel users={users} onSave={saveUser} />
@@ -3580,11 +3730,13 @@ export default function App() {
                     groups={parameterGroups}
                     onSave={saveParameterGroup}
                   />
-                ) : (
+                ) : adminTab === "generalComparisons" ? (
                   <ComparisonCriteriaPanel
                     criteria={comparisonCriteria}
                     onSave={saveComparisonCriterion}
                   />
+                ) : (
+                  <AuditPanel logs={auditLogs} />
                 )}
               </View>
             )}
@@ -4251,6 +4403,27 @@ const styles = StyleSheet.create(
       },
       usersPage: { width: "100%" },
       adminPage: { width: "100%" },
+      auditTable: { minWidth: 1060, width: "100%" },
+      auditRow: {
+        minHeight: 54,
+        flexDirection: "row",
+        alignItems: "center",
+        borderTopWidth: 1,
+        borderTopColor: "#EAECF0",
+        paddingHorizontal: 20,
+      },
+      auditHeader: {
+        minHeight: 44,
+        backgroundColor: "#F9FAFB",
+        borderTopWidth: 0,
+      },
+      tableHeader: { color: "#475467", fontSize: 11, fontWeight: "800" },
+      tableCell: { color: "#344054", fontSize: 13, lineHeight: 19 },
+      auditDateCell: { width: 180, paddingRight: 14 },
+      auditUserCell: { width: 175, paddingRight: 14 },
+      auditVersionCell: { width: 130, paddingRight: 14 },
+      auditOperationCell: { width: 535, paddingRight: 8 },
+      auditErrorText: { color: "#B42318" },
       groupFilter: {
         padding: 12,
         borderBottomWidth: 1,

@@ -86,6 +86,14 @@ export type FirestoreComparisonCriterion = {
   operator: string;
   value: string;
 };
+export type FirestoreAuditLog = {
+  id: string;
+  createdAt: string;
+  username: string;
+  apiVersion: string;
+  operation: string;
+  error: boolean;
+};
 export type FirestoreUserProfile = {
   id: string;
   username: string;
@@ -290,6 +298,29 @@ export async function updateComparisonCriterion(
     ...data,
     condition: deleteField(),
   });
+}
+
+export async function createAuditLog(
+  log: Omit<FirestoreAuditLog, "id">,
+) {
+  await addDoc(collection(firestore, "auditLogs"), log);
+}
+
+export async function listAuditLogs() {
+  const result = await getDocs(collection(firestore, "auditLogs"));
+  return result.docs
+    .map((item) => {
+      const data = item.data();
+      return {
+        id: item.id,
+        createdAt: String(data.createdAt || ""),
+        username: String(data.username || "Não identificado"),
+        apiVersion: String(data.apiVersion || "Não informada"),
+        operation: String(data.operation || ""),
+        error: Boolean(data.error),
+      } as FirestoreAuditLog;
+    })
+    .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
 }
 
 export async function getApiVersionSettings(): Promise<ApiVersionSettings> {

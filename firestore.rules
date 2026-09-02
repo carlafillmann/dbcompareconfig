@@ -21,5 +21,8 @@ service cloud.firestore {
       match /comparisonCriteria/{criterionId} {
         allow read, write: if true;
       }
+      match /auditLogs/{logId} {
+        allow read, write: if true;
+      }
   }
 }
