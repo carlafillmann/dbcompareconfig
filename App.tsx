@@ -4132,10 +4132,6 @@ const darkLogoStyles = StyleSheet.create({
     zIndex: 10,
     width: 160,
     height: 126,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    borderRadius: 16,
-    overflow: "hidden",
   },
   image: { width: 160, height: 126 },
   connectorOverlay: {
