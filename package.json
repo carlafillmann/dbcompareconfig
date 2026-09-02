@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "build:api": "tsc -p server/tsconfig.json",
     "connector": "npm run build:api && electron .",
-    "package:connector": "npm run build:api && electron-builder --win nsis"
+    "package:connector": "npm run build:api && electron-builder --win nsis",
+    "publish:api-version": "node scripts/publish-api-version.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
