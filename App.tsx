@@ -2360,7 +2360,7 @@ function ComparisonCriteriaPanel({
               value={information}
               onChangeText={setInformation}
               multiline
-              maxLength={2000}
+              maxLength={5000}
               placeholder="Informações sobre o critério"
               placeholderTextColor="#98A2B3"
             />
@@ -4047,14 +4047,14 @@ const styles = StyleSheet.create(
         paddingTop: 10,
       },
       comparisonCriterionTextArea: {
-        minHeight: 105,
-        height: 105,
+        minHeight: 155,
+        height: 155,
         textAlignVertical: "top",
         paddingTop: 10,
       },
       comparisonCriterionQuery: {
-        minHeight: 120,
-        height: 120,
+        minHeight: 95,
+        height: 95,
         textAlignVertical: "top",
         paddingTop: 10,
       },
