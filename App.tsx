@@ -3297,6 +3297,7 @@ export default function App() {
               resizeMode="contain"
             />
           </View>
+          <View pointerEvents="none" style={styles.darkLogoBorder} />
           <View pointerEvents="none" style={styles.darkConnectorLogoOverlay}>
             <Image
               source={require("./assets/api-download.png")}
@@ -4134,6 +4135,17 @@ const darkLogoStyles = StyleSheet.create({
     height: 126,
   },
   image: { width: 160, height: 126 },
+  logoBorder: {
+    position: "absolute",
+    top: 18,
+    left: 33,
+    zIndex: 11,
+    width: 124,
+    height: 120,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderRadius: 18,
+  },
   connectorOverlay: {
     position: "absolute",
     left: 24,
@@ -4154,6 +4166,7 @@ const styles = StyleSheet.create(
     {
       darkLogoOverlay: darkLogoStyles.overlay,
       darkLogo: darkLogoStyles.image,
+      darkLogoBorder: darkLogoStyles.logoBorder,
       darkConnectorLogoOverlay: darkLogoStyles.connectorOverlay,
       darkConnectorLogo: darkLogoStyles.connectorImage,
       signOutButton: {
