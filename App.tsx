@@ -266,7 +266,7 @@ function GeneralComparisons({
         <View>
           <Text style={styles.sectionTitle}>Comparações Gerais</Text>
           <Text style={styles.sectionSubtitle}>
-            Resultado dos critérios configurados para as duas bases.
+            Resultado da comparação entre configurações específicas de clientes.
           </Text>
         </View>
       </View>
@@ -280,8 +280,8 @@ function GeneralComparisons({
           <View style={styles.generalTable}>
             <View style={[styles.generalTableRow, styles.generalTableHeader]}>
               <Text style={[styles.tableHeadText, styles.generalCriterionCell]}>CRITÉRIO</Text>
-              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 1 · {firstName}</Text>
-              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>DESCRIÇÃO DA BASE 2 · {secondName}</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>{firstName}</Text>
+              <Text style={[styles.tableHeadText, styles.generalBaseCell]}>{secondName}</Text>
               <Text style={[styles.tableHeadText, styles.generalInformationCell]}>INFORMAÇÕES</Text>
             </View>
             {criteria.map((criterion) => {
